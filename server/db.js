@@ -7,7 +7,7 @@ pg.types.setTypeParser(20, (value) => Number(value));
 
 const pool = new pg.Pool({
   connectionString: config.databaseUrl,
-  ssl: config.dbSsl ? { rejectUnauthorized: true } : false,
+  ssl: config.dbSsl ? { rejectUnauthorized: false } : false,
   max: 5,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 20000, // free Neon databases need a moment to wake up
