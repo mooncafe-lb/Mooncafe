@@ -1,17 +1,21 @@
-# Exported from Render on 2026-10-28T10:49:22Z
-version: "1"
-projects:
-- name: My project
-  environments:
-  - name: Production
-    services:
-    - type: web
-      name: Mooncafe
-      region: Lebanon
-      runtime: node
-      repo: https://github.com/mooncafe-lb/Mooncafe
-      plan: free
-      region: oregon
-      buildCommand: yarn
-      startCommand: Start
-      autoDeployTrigger: commit
+services:
+  - type: web
+    name: moon-cafe
+    runtime: node
+    plan: free
+    Region: Lebanon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SETUP_TOKEN
+        generateValue: true
