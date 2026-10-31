@@ -75,7 +75,23 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await db.waitForDb();
-  await runMigrations();
+  const migration = await runMigrations();
+
+// Internal only (never sent to clients); a future authenticated admin route may read it.
+app.locals.migrationStatus = {
+  mode: migration.mode,
+  pending: migration.pending,
+  failed: migration.failed
+};
+
+if (migration.failed) {
+  // Only a dry run can return failed=true (apply throws). Its changes were rolled back, so keep serving.
+  console.error('[server] migration dry-run FAILED; starting anyway on the existing database schema');
+} else if (migration.pending > 0) {
+  console.warn(
+    `[server] ${migration.pending} migration(s) pending (mode: ${migration.mode}); starting on the existing database schema`
+  );
+}
   const server = app.listen(config.port, '0.0.0.0', () => {
     console.log(`[server] listening on port ${config.port}`);
   });
