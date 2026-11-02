@@ -2,12 +2,15 @@
   "name": "moon-cafe",
   "version": "1.0.0",
   "private": true,
-  "description": "Moon Cafe - Arabic/English ordering website",
+  "description": "Moon Cafe - Arabic/English ordering website with admin dashboard",
   "main": "server/index.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server/index.js",
-    "migrate": "node server/migrate.js"
+    "migrate": "node server/migrate.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

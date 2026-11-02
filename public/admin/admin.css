@@ -1,0 +1,21 @@
+.admin { padding-bottom: 60px; }
+.top h1 { font-size: 1.2rem; margin: 0 auto 0 0; flex: 1; }
+html[dir='rtl'] .top h1 { margin: 0; }
+.content { margin-top: 8px; }
+h2 { margin: 18px 0 8px; } h3 { margin: 16px 0 6px; color: var(--primary); font-size: 1rem; }
+.box { background: var(--surface); border: 2px solid var(--line); border-radius: 20px; padding: 16px; margin-block: 14px; }
+.box.narrow { max-width: 460px; margin-inline: auto; }
+.subbox { border: 1px dashed #3a3a3a; border-radius: 14px; padding: 10px; margin-block: 8px; } .subbox.inner { margin-inline-start: 14px; background: #0c0c0c; }
+.grid2 { display: grid; gap: 0 12px; grid-template-columns: 1fr; } @media (min-width: 640px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.list-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); width: 100%; background: none; border-inline: 0; border-top: 0; color: inherit; text-align: start; }
+.order-row { cursor: pointer; } .grow { flex: 1; min-width: 0; } .actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 12px; background: var(--primary); } .thumb.sm { width: 52px; height: 52px; }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; } .badge { background: #262626; border-radius: 999px; padding: 1px 10px; font-size: .75rem; font-weight: 700; } .badge.warn { background: var(--primary); color: #000; }
+.btn.small { min-height: 36px; padding: 6px 14px; font-size: .9rem; }
+.check { display: flex; align-items: center; gap: 10px; margin-block: 10px; font-weight: 600; } .check input { width: 22px; height: 22px; accent-color: var(--primary); }
+.hint { color: var(--muted); font-size: .85rem; } .input.color { padding: 4px; height: 48px; }
+.sheet.wide { width: min(760px, 100%); } .sticky { position: sticky; bottom: 0; background: var(--surface); padding-block: 10px; }
+.interval { gap: 8px; margin-block: 6px; flex-wrap: wrap; justify-content: flex-start; } .day { border-bottom: 1px solid var(--line); padding-block: 8px; }
+.msg { white-space: pre-wrap; background: #0c0c0c; border-radius: 12px; padding: 10px; font-family: inherit; font-size: .85rem; }
+.st-confirmed, .st-preparing { background: #3a3000; } .st-completed { background: #123a1f; } .st-cancelled { background: #3a1512; }
+select.input { appearance: auto; }
