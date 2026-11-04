@@ -5,6 +5,7 @@ const { loadAll } = require('./settings');
 const { loadMenu } = require('./catalog');
 const { evaluateStore } = require('./hours');
 const { createOrder } = require('./orders');
+const { normalizePhone } = require('./whatsapp');
 const { loadImage } = require('./images');
 const { buildSeedMenu } = require('../seed/menu');
 
@@ -17,6 +18,7 @@ function storeView(settings, status, ready, nowDate) {
     name_en: s.name_en, name_ar: s.name_ar, tagline_ar: s.tagline_ar, tagline_en: s.tagline_en,
     address_en: s.address, address_ar: s.address_ar || s.address, phone: s.phone,
     whatsapp_enabled: !!settings.whatsapp.enabled && ready,
+    whatsapp_number: (normalizePhone(settings.whatsapp.number) || {}).digits || '',
     social: settings.social,
     hours: settings.opening_hours,
     branding: {

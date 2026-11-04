@@ -4,6 +4,7 @@ const { httpError } = require('./util');
 const { loadMenu } = require('./catalog');
 const settingsLib = require('./settings');
 const { ORDER_STATUSES } = require('./orders');
+const { can } = require('./permissions');
 
 const name = () => S.str({ min: 1, max: 120 });
 const sizeRule = S.obj({
@@ -30,8 +31,10 @@ const categoryRule = S.obj({
 });
 const idsRule = S.obj({ ids: S.arr(S.int({ min: 1 }), { min: 1, max: 500 }), category_id: S.int({ min: 1, optional: true }) });
 
-async function bootstrap(db) {
+async function bootstrap(db, me) {
+  if (!can(me.role, 'settings.manage')) return { me, order_statuses: ORDER_STATUSES, categories: [], settings: null, fonts: { ar: [], en: [] } };   // staff and managers never receive menu or site settings
   return {
+    me,
     categories: await loadMenu(db, { admin: true }),
     settings: await settingsLib.loadAll(db),
     order_statuses: ORDER_STATUSES,

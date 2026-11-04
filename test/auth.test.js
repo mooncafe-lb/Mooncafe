@@ -6,7 +6,7 @@ const auth = require('../server/lib/auth');
 
 const config = { sessionSecret: 'x'.repeat(40), setupToken: 'setup-token-123', isProd: false };
 const PW = 'correct horse battery';
-const setup = (db, over = {}) => auth.setupFirstAdmin(db, config, { token: 'setup-token-123', email: 'Owner@Moon.cafe', password: PW, ...over });
+const setup = (db, over = {}) => auth.setupFirstAdmin(db, config, { token: 'setup-token-123', email: 'Owner@Moon.cafe', full_name: 'Owner Name', password: PW, ...over });
 
 test('passwords are stored as salted scrypt hashes and verify correctly', async () => {
   const h = await auth.hashPassword(PW);
@@ -38,7 +38,8 @@ test('login creates a hashed session; wrong passwords and unknown emails are ref
   assert.ok(r.token.length >= 40);
   const stored = (await db.query('SELECT token_hash FROM admin_sessions')).rows[0].token_hash;
   assert.notEqual(stored, r.token); assert.equal(stored, auth.tokenHash(r.token, config.sessionSecret));
-  assert.deepEqual(await auth.sessionAdmin(db, config, r.token), { id: 1, email: 'owner@moon.cafe' });
+  const me = await auth.sessionAdmin(db, config, r.token);
+  assert.deepEqual([me.id, me.email, me.name, me.role, me.permissions], [1, 'owner@moon.cafe', 'Owner Name', 'super_admin', ['*']]);
   assert.equal(await auth.sessionAdmin(db, config, 'forged-token'), null);
   assert.equal(await auth.sessionAdmin(db, { ...config, sessionSecret: 'y'.repeat(40) }, r.token), null);
 });

@@ -52,10 +52,11 @@ test('the home page is a real site: logo, hero, five categories, 34 drinks, open
   assert.ok(!root.textContent.includes('قريباً جداً') && !/coming soon|under construction/i.test(root.textContent));
   const espresso = cardOf(root, 'Espresso');
   assert.equal(byClass(espresso, 'add')[0].disabled, true); assert.equal(byClass(espresso, 'price')[0].textContent, 'السعر قريباً');
-  assert.equal(byClass(cardOf(root, 'Mango'), 'price')[0].textContent, 'يبدأ من 200,000 ل.ل.');
+  assert.equal(byClass(cardOf(root, 'Mango'), 'price')[0].textContent, '200,000 ل.ل.');                // the selected size (Medium) shows its own price
   assert.equal(byClass(cardOf(root, 'Mango'), 'add')[0].disabled, false);
   assert.equal(byClass(root, 'panel-title').length, 5);
-  assert.ok(byClass(root, 'tray').length === 1 && byClass(root, 'cup').some((c) => c.classList.contains('ghost')));
+  assert.ok(byClass(root, 'tray').length === 1 && byClass(root, 'tray')[0].classList.contains('is-empty') && root.textContent.includes('صينيتك فاضية حالياً'));
+  assert.deepEqual(byClass(cardOf(root, 'Mango'), 'size-chip').map((c) => c.textContent), ['وسط', 'كبير']);
 });
 
 test('closed store: clear CLOSED message, Add to Tray and checkout are disabled, menu still browsable', async () => {
@@ -72,7 +73,7 @@ test('closed store: clear CLOSED message, Add to Tray and checkout are disabled,
 
 test('choose size and options, drinks fly into ONE tray and sit side by side', async () => {
   const { dom, root, app } = await boot();
-  byClass(cardOf(root, 'Mango'), 'add')[0].click();                   // two sizes: opens the sheet
+  byClass(cardOf(root, 'Mango'), 'card-name')[0].click();             // the product sheet: size, notes, quantity
   let sheet = sheetEl(dom); assert.ok(sheet);
   button(sheet, 'كبير').click();
   assert.equal(addBtn(sheetEl(dom)).textContent, 'أضف إلى الصينية · 300,000 ل.ل.');
@@ -82,7 +83,7 @@ test('choose size and options, drinks fly into ONE tray and sit side by side', a
   assert.equal(app.cart.items().length, 1);
   assert.deepEqual([app.cart.items()[0].unit_price, app.cart.items()[0].size_en, app.cart.items()[0].instructions], [300000, 'Large', 'بدون سكر']);
   assert.equal(cups(app).length, 1); assert.equal(byClass(app.tray.el, 'cup-qty')[0].textContent, '1');
-  assert.equal(byClass(app.tray.el, 'tray-total')[0].textContent, '300,000 ل.ل.');
+  assert.ok(byClass(root, 'bar')[0].textContent.includes('300,000 ل.ل.'));                 // the total now lives in the bottom bar and the summary card
 
   byClass(cardOf(root, 'Latte'), 'card-name')[0].click();             // required Hot/Iced group
   addBtn(sheetEl(dom)).click(); await flush();
@@ -190,7 +191,7 @@ test('language switch flips direction, language and number format', async () => 
   assert.equal(dom.doc.documentElement.dir, 'ltr'); assert.equal(dom.doc.documentElement.lang, 'en');
   assert.equal(byTag(dom.root, 'h1')[0].textContent, 'We and the moon are neighbors');
   assert.deepEqual(byClass(dom.root, 'tab').map((t) => t.textContent), ['Coffee', 'Latte', 'Milkshake', 'Frappe', 'Smoothie']);
-  assert.equal(byClass(cardOf(dom.root, 'Mango'), 'price')[0].textContent, 'From 200,000 LBP');
+  assert.equal(byClass(cardOf(dom.root, 'Mango'), 'price')[0].textContent, '200,000 LBP');
   assert.equal(dom.localStorage.getItem('mc_lang'), 'en');
 });
 
@@ -233,4 +234,57 @@ test('admin-chosen brand colour, fonts, text overrides and promotions reach the 
   assert.ok(button(root, 'اطلب هلق')); assert.ok(root.textContent.includes('خصم اليوم'));
   assert.equal(byClass(root, 'promo').length, 1); assert.ok(root.textContent.includes('عرض الصباح') && !root.textContent.includes('مخفي'));
   assert.ok(byTag(root, 'a').some((a) => a.getAttribute('href') === 'https://instagram.com/mooncafe.lb'));
+});
+
+test('quick add from the card: pick a size chip, press Add to Tray, no sheet needed; bottom bar and summary follow', async () => {
+  const { dom, root, app } = await boot();
+  assert.ok(byClass(root, 'bar')[0].classList.contains('idle'));                        // empty tray: only the floating WhatsApp button
+  assert.ok(byTag(byClass(root, 'bar')[0], 'a')[0].getAttribute('href') === 'https://wa.me/96178964984');
+  const mango = cardOf(root, 'Mango');
+  button(mango, 'كبير').click();
+  assert.equal(byClass(cardOf(root, 'Mango'), 'price')[0].textContent, '300,000 ل.ل.');
+  assert.equal(byClass(cardOf(root, 'Mango'), 'size-chip').find((c) => c.textContent === 'كبير').getAttribute('aria-pressed'), 'true');
+  byClass(cardOf(root, 'Mango'), 'add')[0].click(); await flush();
+  assert.equal(sheetEl(dom), undefined);
+  assert.deepEqual(app.cart.items().map((l) => [l.size_en, l.unit_price, l.qty]), [['Large', 300000, 1]]);
+  byClass(cardOf(root, 'Smoothie' === 'x' ? 'x' : 'Peach'), 'add')[0].click(); await flush();
+  assert.equal(cups(app).length, 2);
+  const bar = byClass(root, 'bar')[0]; assert.ok(!bar.classList.contains('idle'));
+  assert.ok(bar.textContent.includes('2 مشروب') && bar.textContent.includes('500,000 ل.ل.'));
+  assert.equal(byClass(root, 'badge-count')[0].textContent, '2');                          // header tray button badge
+  const summary = byClass(root, 'summary')[0];
+  assert.ok(summary.textContent.includes('طلبك') && summary.textContent.includes('Mango') && summary.textContent.includes('Peach') && summary.textContent.includes('500,000'));
+  button(summary, '×').click();                                                           // remove from the summary card
+  assert.equal(app.cart.items().length, 1);
+  button(bar, '2 مشروب') || null;
+  byClass(root, 'bar-cart')[0].click(); assert.ok(sheetEl(dom).textContent.includes('صينيتك'));
+});
+
+test('a drink with a required choice opens the sheet with the size already picked on the card', async () => {
+  const { dom, root, app } = await boot();
+  button(cardOf(root, 'Latte'), 'كبير').click();
+  byClass(cardOf(root, 'Latte'), 'add')[0].click();
+  const sheet = sheetEl(dom); assert.ok(sheet);
+  assert.equal(byClass(sheet, 'chip').find((c) => c.textContent.startsWith('كبير')).getAttribute('aria-pressed'), 'true');
+  assert.equal(app.cart.items().length, 0);
+});
+
+test('search filters the menu by Arabic or English name and shows a message when nothing matches', async () => {
+  const { root } = await boot();
+  const box = () => byTag(root, 'input').find((i) => i.getAttribute('type') === 'search');
+  type(box(), 'oreo');
+  assert.equal(byClass(root, 'card').length, 1); assert.equal(byClass(root, 'panel-title').length, 1); assert.equal(byClass(root, 'panel-title')[0].textContent, 'ميلك شيك');
+  type(box(), 'MANGO');
+  assert.deepEqual(byClass(root, 'card').map((c) => byClass(c, 'card-name')[0].textContent).sort(), ['Mango', 'Passion Mango']);
+  type(box(), 'zzzz'); assert.equal(byClass(root, 'card').length, 0); assert.ok(root.textContent.includes('لا توجد نتائج مطابقة'));
+  type(box(), ''); assert.equal(byClass(root, 'card').length, 34);
+});
+
+test('category chips carry icons and mark the active section; the header and menu button work', async () => {
+  const { dom, root } = await boot();
+  assert.ok(byClass(root, 'tab').every((t) => byTag(t, 'img').length === 1));
+  byClass(root, 'tab')[3].click();
+  assert.ok(byClass(root, 'tab')[3].classList.contains('active') && !byClass(root, 'tab')[0].classList.contains('active'));
+  const [, menuBtn] = byClass(root, 'icon-btn'); menuBtn.click();
+  assert.ok(sheetEl(dom).textContent.includes('تواصل معنا'));
 });

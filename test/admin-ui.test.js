@@ -22,7 +22,8 @@ let run = 0;
 
 async function boot({ db: given, migrations } = {}) {
   const db = given || (migrations ? createTestDb({ migrations }) : await freshDb());
-  const pub = createPublicRouter({ db, config }); const adm = createAdminRouter({ db, config });
+  const now = () => new Date('2026-11-02T05:00:00Z');   // fixed clock: Monday 07:00 in Beirut, so results never depend on when the tests run
+  const pub = createPublicRouter({ db, config, now }); const adm = createAdminRouter({ db, config, now });
   const jar = {};
   const fetchImpl = async (url, opts = {}) => {
     const isAdmin = url.startsWith('/api/admin');
@@ -56,28 +57,28 @@ const tab = (root, key) => byClass(root, 'tab').find((t) => t.dataset.tab === ke
 async function setupAndLogin(ctx) {
   const { root } = ctx;
   assert.ok(root.textContent.includes('هذا أول تشغيل'));
-  const inputs = byTag(root, 'input'); // token, email, password, repeat
-  type(inputs[0], 'setup-token-123'); type(inputs[1], 'owner@moon.cafe'); type(inputs[2], PW); type(inputs[3], PW);
+  const inputs = byTag(root, 'input'); // token, full name, email, password, repeat
+  type(inputs[0], 'setup-token-123'); type(inputs[1], 'Owner Name'); type(inputs[2], 'owner@moon.cafe'); type(inputs[3], PW); type(inputs[4], PW);
   btn(root, 'إنشاء حساب المدير').click(); await until(() => byClass(root, 'tab').length > 0);
 }
 
 test('first run: setup screen creates the admin and opens the dashboard; wrong login is refused', async () => {
   const ctx = await boot(); const { root } = ctx;
   await setupAndLogin(ctx);
-  assert.deepEqual(byClass(root, 'tab').map((t) => t.dataset.tab), ['orders', 'menu', 'store', 'brand', 'content', 'whatsapp', 'texts', 'account']);
+  assert.deepEqual(byClass(root, 'tab').map((t) => t.dataset.tab), ['orders', 'staff', 'menu', 'store', 'brand', 'content', 'whatsapp', 'texts', 'account']);
   assert.ok(root.textContent.includes('الطلبات'));
   btn(root, 'خروج').click(); await until(() => root.textContent.includes('تسجيل الدخول'));
   const inputs = byTag(root, 'input'); type(inputs[0], 'owner@moon.cafe'); type(inputs[1], 'wrong password');
   btn(root, 'تسجيل الدخول').click(); await until(() => root.textContent.includes('البريد أو كلمة المرور غير صحيحة'));
-  type(byTag(root, 'input')[1], PW); btn(root, 'تسجيل الدخول').click(); await until(() => byClass(root, 'tab').length === 8);
+  type(byTag(root, 'input')[1], PW); btn(root, 'تسجيل الدخول').click(); await until(() => byClass(root, 'tab').length === 9);
 });
 
 test('weak or mismatched setup passwords are stopped before reaching the server; missing SETUP_TOKEN is explained', async () => {
   const ctx = await boot(); const inputs = byTag(ctx.root, 'input');
-  type(inputs[0], 'setup-token-123'); type(inputs[1], 'a@b.co'); type(inputs[2], 'short'); type(inputs[3], 'short');
+  type(inputs[0], 'setup-token-123'); type(inputs[1], 'Owner Name'); type(inputs[2], 'a@b.co'); type(inputs[3], 'short'); type(inputs[4], 'short');
   btn(ctx.root, 'إنشاء حساب المدير').click(); await flush(30);
   assert.ok(ctx.root.textContent.includes('10 أحرف'));
-  type(byTag(ctx.root, 'input')[2], PW); btn(ctx.root, 'إنشاء حساب المدير').click(); await flush(30);
+  type(byTag(ctx.root, 'input')[3], PW); btn(ctx.root, 'إنشاء حساب المدير').click(); await flush(30);
   assert.ok(ctx.root.textContent.includes('غير متطابقتين'));
 });
 
@@ -194,13 +195,13 @@ test('orders tab: list, details, status change; account tab: password change', a
   const made = await dispatch(pub, { method: 'POST', url: '/orders', body: { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 2 }] } });
   await setupAndLogin(ctx);
   const row = byClass(root, 'order-row')[0];
-  assert.ok(row.textContent.includes(made.body.order.code) && row.textContent.includes('Sara Haddad') && row.textContent.includes('بانتظار واتساب'));
+  assert.ok(row.textContent.includes(made.body.order.code) && row.textContent.includes('Sara Haddad') && row.textContent.includes('طلب جديد'));
   row.click(); await flush(40);
   const s = sheetEl(dom);
   assert.ok(s.textContent.includes('Mango (كبير) × 2') && s.textContent.includes('Sibline road') && s.textContent.includes('650,000'));
   all(s, (n) => n.tagName === 'BUTTON' && n.dataset.status === 'confirmed')[0].click(); await flush(80);
   assert.equal((await db.query('SELECT status FROM orders')).rows[0].status, 'confirmed');
-  assert.ok(byClass(root, 'order-row')[0].textContent.includes('مؤكد'));
+  assert.ok(byClass(root, 'order-row')[0].textContent.includes('تم الاستلام'));
   const sel = inputOf(root, 'الحالة'); sel.value = 'cancelled'; sel.dispatchEvent({ type: 'change', bubbles: true, target: sel }); await flush(60);
   assert.equal(byClass(root, 'order-row').length, 0);
 
@@ -209,7 +210,7 @@ test('orders tab: list, details, status change; account tab: password change', a
   btn(root, 'حفظ').click(); await until(() => byTag(root, 'input')[0].value === '');          // the form clears itself once the server accepted the change
   btn(root, 'خروج').click(); await until(() => root.textContent.includes('تسجيل الدخول'));
   const i = byTag(root, 'input'); type(i[0], 'owner@moon.cafe'); type(i[1], PW); btn(root, 'تسجيل الدخول').click(); await until(() => root.textContent.includes('البريد أو كلمة المرور غير صحيحة'));
-  type(byTag(root, 'input')[1], 'a brand new password'); btn(root, 'تسجيل الدخول').click(); await until(() => byClass(root, 'tab').length === 8);
+  type(byTag(root, 'input')[1], 'a brand new password'); btn(root, 'تسجيل الدخول').click(); await until(() => byClass(root, 'tab').length === 9);
 });
 
 test('the dashboard switches to English and left-to-right', async () => {
@@ -217,4 +218,80 @@ test('the dashboard switches to English and left-to-right', async () => {
   btn(ctx.root, 'English').click();
   assert.equal(ctx.dom.doc.documentElement.dir, 'ltr');
   assert.ok(ctx.root.textContent.includes('Orders') && ctx.root.textContent.includes('Sign out'));
+});
+
+// ------------------------------------------------------------ staff and roles in the dashboard
+const users = require('../server/lib/users');
+const orders = require('../server/lib/orders');
+const { loadAll } = require('../server/lib/settings');
+const auth = require('../server/lib/auth');
+const bossOf = async (db) => auth.publicAdmin((await db.query('SELECT id, email, username, full_name, role FROM admins WHERE id = 1')).rows[0]);
+const placeOrder = async (db) => {
+  const mango = (await db.query("SELECT p.id, s.id AS sid FROM products p JOIN product_sizes s ON s.product_id=p.id WHERE p.name_en='Mango' AND s.name_en='Large'")).rows[0];
+  return (await orders.createOrder(db, await loadAll(db), { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] })).order;
+};
+async function signIn(root, login, password = PW) {
+  btn(root, 'خروج').click(); await until(() => root.textContent.includes('تسجيل الدخول') && !root.textContent.includes('خروج'));
+  const i = byTag(root, 'input'); type(i[0], login); type(i[1], password); btn(root, 'تسجيل الدخول').click();
+  await until(() => byClass(root, 'tab').length > 0);
+}
+
+test('Super Admin adds an employee in the Staff tab; the employee signs in with the username and sees only Orders', async () => {
+  const ctx = await boot(); const { root, dom, db } = ctx;
+  await setupAndLogin(ctx);
+  tab(root, 'staff').click(); await until(() => root.textContent.includes('+ مستخدم جديد'));
+  btn(root, '+ مستخدم جديد').click();
+  const s = sheetEl(dom);
+  type(inputOf(s, 'الاسم الكامل'), 'Ahmad Khalil'); type(inputOf(s, 'اسم المستخدم'), 'ahmad'); type(inputOf(s, 'كلمة المرور'), PW);
+  inputOf(s, 'الدور').value = 'staff';
+  all(s, (n) => n.dataset && n.dataset.act === 'save-user')[0].click();
+  await until(() => sheetEl(dom) === undefined);
+  const row = (await db.query("SELECT username, full_name, role, created_by FROM admins WHERE username = 'ahmad'")).rows[0];
+  assert.deepEqual([row.full_name, row.role, row.created_by], ['Ahmad Khalil', 'staff', 1]);
+  assert.ok(byClass(root, 'list-row').some((r) => r.textContent.includes('Ahmad Khalil') && r.textContent.includes('موظف')));
+
+  const order = await placeOrder(db);
+  await signIn(root, 'ahmad');
+  assert.deepEqual(byClass(root, 'tab').map((t) => t.dataset.tab), ['orders', 'account']);        // no Menu, Settings, Staff or Brand for an employee
+  assert.ok(root.textContent.includes('Ahmad Khalil'));
+  await until(() => byClass(root, 'order-row').length === 1);
+  assert.ok(byClass(root, 'order-row')[0].textContent.includes('بدون موظف'));
+  byClass(root, 'order-row')[0].click(); await until(() => sheetEl(dom));
+  assert.ok(sheetEl(dom).textContent.includes('الموظف المسؤول: بدون موظف'));
+  assert.ok(all(sheetEl(dom), (n) => n.dataset && n.dataset.status === 'preparing')[0].disabled);   // cannot change status before receiving the order
+  all(sheetEl(dom), (n) => n.dataset && n.dataset.act === 'claim')[0].click();
+  await until(() => byClass(root, 'order-row')[0].textContent.includes('الموظف المسؤول: Ahmad Khalil'));
+  assert.equal((await db.query('SELECT assigned_name, status FROM orders')).rows[0].status, 'confirmed');
+  byClass(root, 'order-row')[0].click(); await until(() => sheetEl(dom));
+  all(sheetEl(dom), (n) => n.dataset && n.dataset.status === 'preparing')[0].click();
+  await until(() => byClass(root, 'order-row')[0].textContent.includes('جاري التحضير'));
+  byClass(root, 'order-row')[0].click(); await until(() => sheetEl(dom));
+  const log = byClass(sheetEl(dom), 'log-row').map((r) => r.textContent);
+  assert.equal(log.length, 3);
+  assert.ok(log[0].includes('تم إنشاء الطلب') && log[1].includes('استلم الطلب الموظف: Ahmad Khalil') && log[2].includes('جاري التحضير — بواسطة Ahmad Khalil'), log.join(' | '));
+  assert.ok(sheetEl(dom).textContent.includes('الموظف المسؤول: Ahmad Khalil'));
+  assert.ok(order.code);
+});
+
+test('Manager sees the staff dashboard and orders; cannot add managers, change settings or see the menu tabs', async () => {
+  const ctx = await boot(); const { root, dom, db } = ctx;
+  await setupAndLogin(ctx);
+  const boss = await bossOf(db);
+  await users.createUser(db, boss, { full_name: 'Mona Manager', username: 'mona', role: 'manager', password: PW });
+  const created = await users.createUser(db, boss, { full_name: 'Ahmad Khalil', username: 'ahmad', role: 'staff', password: PW });
+  const ahmad = auth.publicAdmin((await db.query('SELECT id, email, username, full_name, role FROM admins WHERE id = $1', [created.id])).rows[0]);
+  const o1 = await placeOrder(db); await placeOrder(db);
+  await orders.claimOrder(db, o1.id, ahmad); await orders.updateOrderStatus(db, o1.id, 'preparing', '', ahmad);
+  await signIn(root, 'mona');
+  assert.deepEqual(byClass(root, 'tab').map((t) => t.dataset.tab), ['orders', 'staff', 'account']);
+  tab(root, 'staff').click(); await until(() => byClass(root, 'staff-card').length > 0);
+  assert.ok(root.textContent.includes('طلبات بانتظار الاستلام: 1'));
+  const card = byClass(root, 'staff-card').find((c) => c.textContent.includes('Ahmad Khalil'));
+  assert.ok(card.textContent.includes('طلبات حالية: 1') && card.textContent.includes('طلبات تابعها: 1') && card.textContent.includes('جاري التحضير'));
+  btn(card, 'التفاصيل').click(); await until(() => sheetEl(dom));
+  assert.ok(sheetEl(dom).textContent.includes('الطلبات السابقة') && sheetEl(dom).textContent.includes(o1.code) && sheetEl(dom).textContent.includes('آخر الإجراءات'));
+  dom.doc.body.children.filter((c) => c.classList.contains('backdrop')).forEach((b) => b.remove());
+  btn(root, '+ مستخدم جديد').click();
+  assert.equal(inputOf(sheetEl(dom), 'الدور').children.length, 1);        // a manager can only create staff
+  assert.ok(root.textContent.includes('Mona Manager'));
 });

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { promisify } = require('util');
 const S = require('./validate');
 const { httpError } = require('./util');
+const { normalizeRole, permissionsOf } = require('./permissions');
 
 const scrypt = promisify(crypto.scrypt);
 const COOKIE = 'mc_session';
@@ -38,7 +39,16 @@ const safeEqual = (a, b) => {
 const iso = (d) => d.toISOString();
 const truthy = (v) => v === true || v === 1 || v === 't';
 
-const credentialsShape = S.obj({ email: S.str({ min: 3, max: 254, pattern: EMAIL }), password: S.str({ min: 1, max: 200, trim: false }) });
+const credentialsShape = S.obj({ login: S.str({ min: 1, max: 254 }), password: S.str({ min: 1, max: 200, trim: false }) });
+
+// What the browser and the routes know about a signed-in user. The display name is the real name when there is one.
+function publicAdmin(a) {
+  const role = normalizeRole(a.role);
+  return {
+    id: a.id, email: a.email || '', username: a.username || '', full_name: a.full_name || '',
+    name: a.full_name || a.username || a.email || '', role, permissions: permissionsOf(role),
+  };
+}
 const newPasswordRule = S.str({ min: 10, max: 200, trim: false });
 
 async function adminCount(db) {
@@ -47,23 +57,26 @@ async function adminCount(db) {
 
 // First administrator: allowed only while no admin exists and only with the SETUP_TOKEN from Render.
 async function setupFirstAdmin(db, config, raw) {
+  if (!config.setupToken) throw httpError(403, 'setup_disabled');
+  if (await adminCount(db) > 0) throw httpError(403, 'already_setup');
   const input = S.parse(S.obj({
     token: S.str({ min: 1, max: 200, trim: false }),
     email: S.str({ min: 3, max: 254, pattern: EMAIL }),
+    full_name: S.str({ min: 2, max: 80 }),
     password: newPasswordRule,
   }), raw);
-  if (!config.setupToken) throw httpError(403, 'setup_disabled');
-  if (await adminCount(db) > 0) throw httpError(403, 'already_setup');
   if (!safeEqual(input.token, config.setupToken)) throw httpError(403, 'invalid_setup_token');
   const hash = await hashPassword(input.password);
-  const { rows } = await db.query('INSERT INTO admins (email, password_hash) VALUES ($1, $2) RETURNING id', [input.email.toLowerCase(), hash]);
+  const { rows } = await db.query("INSERT INTO admins (email, password_hash, full_name, role) VALUES ($1, $2, $3, 'super_admin') RETURNING id", [input.email.toLowerCase(), hash, input.full_name]);
   return { id: rows[0].id, email: input.email.toLowerCase() };
 }
 
 async function login(db, config, raw, ctx = {}, now = new Date()) {
-  const input = S.parse(credentialsShape, raw);
+  const input = S.parse(credentialsShape, raw && raw.login === undefined && raw.email !== undefined ? { ...raw, login: raw.email } : raw);
+  const who = input.login.toLowerCase();
   const { rows } = await db.query(
-    'SELECT id, email, password_hash, is_active, failed_attempts, locked_until FROM admins WHERE lower(email) = $1', [input.email.toLowerCase()]);
+    `SELECT id, email, username, full_name, role, password_hash, is_active, failed_attempts, locked_until
+     FROM admins WHERE lower(email) = $1 OR lower(username) = $1`, [who]);
   const admin = rows[0];
   if (admin && admin.locked_until && new Date(admin.locked_until) > now) throw httpError(429, 'account_locked');
   const ok = await verifyPassword(input.password, admin ? admin.password_hash : await getDummyHash());
@@ -75,22 +88,22 @@ async function login(db, config, raw, ctx = {}, now = new Date()) {
     }
     throw httpError(401, 'invalid_credentials');
   }
-  await db.query('UPDATE admins SET failed_attempts = 0, locked_until = NULL, last_login_at = CURRENT_TIMESTAMP WHERE id = $1', [admin.id]);
+  await db.query('UPDATE admins SET failed_attempts = 0, locked_until = NULL, last_login_at = CURRENT_TIMESTAMP, last_activity_at = CURRENT_TIMESTAMP WHERE id = $1', [admin.id]);
   await db.query('DELETE FROM admin_sessions WHERE expires_at < $1', [iso(now)]);
   const token = crypto.randomBytes(32).toString('base64url');
   await db.query(
     'INSERT INTO admin_sessions (admin_id, token_hash, expires_at, ip, user_agent) VALUES ($1,$2,$3,$4,$5)',
     [admin.id, tokenHash(token, config.sessionSecret), iso(new Date(now.getTime() + SESSION_MS)), String(ctx.ip || '').slice(0, 60), String(ctx.ua || '').slice(0, 200)]);
-  return { token, admin: { id: admin.id, email: admin.email }, maxAge: SESSION_MS };
+  return { token, admin: publicAdmin(admin), maxAge: SESSION_MS };
 }
 
 async function sessionAdmin(db, config, token, now = new Date()) {
   if (!token || typeof token !== 'string' || token.length > 200) return null;
   const { rows } = await db.query(
-    `SELECT a.id, a.email, a.is_active FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
+    `SELECT a.id, a.email, a.username, a.full_name, a.role, a.is_active FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
      WHERE s.token_hash = $1 AND s.expires_at > $2`, [tokenHash(token, config.sessionSecret), iso(now)]);
   const a = rows[0];
-  return a && truthy(a.is_active) ? { id: a.id, email: a.email } : null;
+  return a && truthy(a.is_active) ? publicAdmin(a) : null;
 }
 
 async function logout(db, config, token) {
@@ -133,5 +146,5 @@ const cookieOptions = (config, maxAge) => ({ httpOnly: true, sameSite: 'strict',
 
 module.exports = {
   COOKIE, hashPassword, verifyPassword, tokenHash, setupFirstAdmin, login, sessionAdmin, logout, changePassword,
-  requireAdmin, checkCsrf, cookieOptions, adminCount, MAX_FAILS,
+  requireAdmin, checkCsrf, cookieOptions, adminCount, MAX_FAILS, publicAdmin, newPasswordRule,
 };

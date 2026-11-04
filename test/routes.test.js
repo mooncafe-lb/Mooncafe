@@ -80,7 +80,7 @@ test('before migrations 002/003 the site still shows the built-in menu, closed, 
 });
 
 async function login(adm) {
-  assert.equal((await dispatch(adm, { method: 'POST', url: '/setup', headers: H, body: { token: 'setup-token-123', email: 'owner@moon.cafe', password: PW } })).statusCode, 201);
+  assert.equal((await dispatch(adm, { method: 'POST', url: '/setup', headers: H, body: { token: 'setup-token-123', email: 'owner@moon.cafe', full_name: 'Owner Name', password: PW } })).statusCode, 201);
   const r = await dispatch(adm, { method: 'POST', url: '/login', headers: H, body: { email: 'owner@moon.cafe', password: PW } });
   assert.equal(r.statusCode, 200);
   const c = r.cookiesSet.mc_session; assert.ok(c);
@@ -154,7 +154,7 @@ test('admin: orders list, detail with items, status update with history', async 
   assert.equal((await req('PUT', `/orders/${id}/status`, { status: 'completed' })).statusCode, 200);
   const after = (await req('GET', `/orders/${id}`)).body;
   assert.equal(after.order.status, 'completed'); assert.deepEqual(after.history.map((h) => h.status), ['whatsapp_prepared', 'confirmed', 'completed']);
-  assert.equal(after.history[1].changed_by_email, 'owner@moon.cafe');
+  assert.equal(after.history[1].actor_name, 'Owner Name'); assert.equal(after.history[1].event, 'status');
   assert.equal((await req('GET', '/orders?status=cancelled')).body.total, 0);
   assert.equal((await req('GET', '/orders/999')).statusCode, 404);
 });

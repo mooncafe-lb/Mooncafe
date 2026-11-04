@@ -4,10 +4,8 @@ import { h, clear } from './h.js';
 // appears as a cup on it, side by side, and flies in from where it was chosen.
 export function createTray({ cart, i18n, placeholder, onOpen }) {
   const slots = h('div', { class: 'tray-slots' });
-  const total = h('div', { class: 'tray-total' });
-  const openBtn = h('button', { class: 'tray-open', type: 'button' });
-  const el = h('section', { class: 'tray', role: 'button', tabindex: '0', onClick: () => onOpen() },
-    slots, h('div', { class: 'tray-side' }, total, openBtn));
+  const el = h('section', { class: 'tray', role: 'button', tabindex: '0', onClick: () => onOpen() }, h('div', { class: 'tray-well' }, slots));
+  let resolveTarget = () => slots;
   el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } });
   let known = new Set();
 
@@ -20,11 +18,10 @@ export function createTray({ cart, i18n, placeholder, onOpen }) {
   function render() {
     const items = cart.items();
     el.setAttribute('aria-label', i18n.t('tray_title'));
+    el.classList.toggle('is-empty', !items.length);
     clear(slots, items.length
       ? items.map(cup)
-      : [h('div', { class: 'cup ghost' }), h('div', { class: 'cup ghost' }), h('div', { class: 'cup ghost' }), h('span', { class: 'tray-empty' }, i18n.t('tray_empty'))]);
-    clear(total, cart.count() ? i18n.money(cart.subtotal()) : '');
-    clear(openBtn, cart.count() ? `${i18n.t('tray_open')} (${cart.count()})` : i18n.t('tray_open'));
+      : [h('img', { class: 'tray-icon', src: placeholder, alt: '' }), h('div', { class: 'tray-empty' }, h('b', null, i18n.t('tray_empty_title')), h('span', null, i18n.t('tray_empty_hint')))]);
     known = new Set(items.map((l) => l.key));
   }
 
@@ -39,7 +36,7 @@ export function createTray({ cart, i18n, placeholder, onOpen }) {
       const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (reduce || !from || typeof el.animate !== 'function') { resolve(); return; }
       const size = 64;
-      const to = slots.getBoundingClientRect();
+      const to = resolveTarget().getBoundingClientRect();
       const startX = from.left + from.width / 2 - size / 2;
       const startY = from.top + from.height / 2 - size / 2;
       const endX = to.left + to.width / 2 - size / 2;
@@ -61,5 +58,5 @@ export function createTray({ cart, i18n, placeholder, onOpen }) {
     });
   }
 
-  return { el, render, pop, fly, slots, wasKnown: (key) => known.has(key) };
+  return { el, render, pop, fly, slots, setTarget: (fn) => { resolveTarget = fn; }, wasKnown: (key) => known.has(key) };
 }

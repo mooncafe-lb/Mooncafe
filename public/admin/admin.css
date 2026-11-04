@@ -19,3 +19,6 @@ h2 { margin: 18px 0 8px; } h3 { margin: 16px 0 6px; color: var(--primary); font-
 .msg { white-space: pre-wrap; background: #0c0c0c; border-radius: 12px; padding: 10px; font-family: inherit; font-size: .85rem; }
 .st-confirmed, .st-preparing { background: #3a3000; } .st-completed { background: #123a1f; } .st-cancelled { background: #3a1512; }
 select.input { appearance: auto; }
+.staff-card.off { opacity: .6; } .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-block: 10px; text-align: center; } .stats .n { display: block; font-size: 1.5rem; color: var(--primary); }
+.log { list-style: none; padding: 0; margin: 0; } .log-row { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .92rem; } .log-row time { color: var(--primary); font-weight: 700; direction: ltr; display: inline-block; }
+.responsible.on { color: var(--primary); } .st-ready { background: #2a3a00; } .st-out_for_delivery { background: #3a2a00; }

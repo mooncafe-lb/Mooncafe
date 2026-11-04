@@ -8,7 +8,7 @@ export const S = {
     saved: 'تم الحفظ', deleted: 'تم الحذف', save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', edit: 'تعديل', add: 'إضافة', close: 'إغلاق', up: 'أعلى', down: 'أسفل', yes_delete: 'هل أنت متأكد من الحذف؟', loading: 'جاري التحميل…', empty: 'لا يوجد شيء بعد',
     tab_orders: 'الطلبات', tab_menu: 'القائمة', tab_store: 'الحالة والمواعيد', tab_brand: 'الهوية', tab_content: 'المحتوى', tab_whatsapp: 'واتساب والتوصيل', tab_texts: 'النصوص', tab_account: 'الحساب',
     // orders
-    all: 'الكل', status: 'الحالة', order_status: { whatsapp_prepared: 'بانتظار واتساب', confirmed: 'مؤكد', preparing: 'قيد التحضير', completed: 'مكتمل', cancelled: 'ملغي' },
+    all: 'الكل', status: 'الحالة', order_status: { whatsapp_prepared: 'طلب جديد', confirmed: 'تم الاستلام', preparing: 'جاري التحضير', ready: 'الطلب جاهز', out_for_delivery: 'خرج للتوصيل', completed: 'تم التسليم', cancelled: 'ملغي' },
     pickup: 'استلام', delivery: 'توصيل', customer: 'الزبون', phone: 'الهاتف', address: 'العنوان', map: 'الخريطة', notes: 'ملاحظات', items: 'الأصناف', history: 'السجل', note: 'ملاحظة', set_status: 'تغيير الحالة', more: 'المزيد', total: 'الإجمالي', subtotal: 'المجموع', delivery_fee: 'رسوم التوصيل', copy_msg: 'رسالة واتساب',
     // menu
     categories: 'الأقسام', products: 'المنتجات', add_category: 'قسم جديد', add_product: 'منتج جديد', name_ar: 'الاسم بالعربي', name_en: 'الاسم بالإنجليزي', desc_ar: 'الوصف بالعربي', desc_en: 'الوصف بالإنجليزي',
@@ -33,6 +33,11 @@ export const S = {
     // account
     change_password: 'تغيير كلمة المرور', current_password: 'كلمة المرور الحالية', new_password: 'كلمة المرور الجديدة', repeat_password: 'أعد كتابة كلمة المرور',
     err_wrong_password: 'كلمة المرور الحالية غير صحيحة', lang_toggle: 'English',
+    login_id: 'اسم المستخدم أو البريد', full_name: 'الاسم الكامل', username: 'اسم المستخدم', tab_staff: 'الموظفون', err_taken: 'اسم المستخدم أو البريد مستخدم مسبقاً', err_forbidden: 'ليس لديك صلاحية لهذا الإجراء', err_last_super: 'لا يمكن تعطيل أو حذف آخر مدير عام', err_self: 'لا يمكنك تعطيل أو حذف حسابك الخاص', err_not_yours: 'هذا الطلب مع موظف آخر', err_claim_first: 'استلم الطلب أولاً', err_assigned: 'الطلب مع موظف آخر', err_closed_order: 'الطلب مغلق',
+    role: 'الدور', roles: { super_admin: 'مدير عام', manager: 'مدير', staff: 'موظف' }, active: 'فعّال', inactive: 'معطّل', add_user: 'مستخدم جديد', edit_user: 'تعديل مستخدم', new_password_optional: 'كلمة مرور جديدة (اتركها فارغة بدون تغيير)', email_optional: 'البريد (اختياري)',
+    claim: 'استلام الطلب', release: 'إعادة الطلب للقائمة', assign: 'إسناد إلى', responsible: 'الموظف المسؤول', unassigned: 'بدون موظف', my_orders: 'طلباتي', only_unassigned: 'بدون موظف', assigned_since: 'منذ', none: '—',
+    active_orders: 'طلبات حالية', handled_orders: 'طلبات تابعها', last_activity: 'آخر نشاط', waiting_orders: 'طلبات بانتظار الاستلام', current_orders: 'الطلبات الحالية', past_orders: 'الطلبات السابقة', recent_activity: 'آخر الإجراءات', never: 'لم يسجل بعد', details: 'التفاصيل',
+    ev_created: 'تم إنشاء الطلب', ev_claimed: 'استلم الطلب الموظف: {actor}', ev_assigned: 'أُسند الطلب إلى {target} — بواسطة {actor}', ev_released: 'أُعيد الطلب إلى القائمة — بواسطة {actor}', ev_status: '{status} — بواسطة {actor}', ev_note: 'ملاحظة — {actor}', activity_log: 'سجل الطلب',
   },
   en: {
     title: 'Moon Cafe dashboard', login: 'Sign in', logout: 'Sign out', email: 'Email', password: 'Password', setup: 'Create the admin account', setup_token: 'Setup token (SETUP_TOKEN)',
@@ -41,7 +46,7 @@ export const S = {
     err_credentials: 'Wrong email or password', err_locked: 'The account is locked for a while after too many attempts. Try again in 15 minutes.', err_setup_token: 'The setup token is wrong', err_already: 'The admin account already exists', err_generic: 'Something went wrong. Try again.', err_validation: 'Check the highlighted fields', err_network: 'No connection', err_pw_short: 'Password must be at least 10 characters', err_pw_match: 'Passwords do not match',
     saved: 'Saved', deleted: 'Deleted', save: 'Save', cancel: 'Cancel', delete: 'Delete', edit: 'Edit', add: 'Add', close: 'Close', up: 'Up', down: 'Down', yes_delete: 'Delete this item?', loading: 'Loading…', empty: 'Nothing here yet',
     tab_orders: 'Orders', tab_menu: 'Menu', tab_store: 'Status & hours', tab_brand: 'Brand', tab_content: 'Content', tab_whatsapp: 'WhatsApp & delivery', tab_texts: 'Texts', tab_account: 'Account',
-    all: 'All', status: 'Status', order_status: { whatsapp_prepared: 'Awaiting WhatsApp', confirmed: 'Confirmed', preparing: 'Preparing', completed: 'Completed', cancelled: 'Cancelled' },
+    all: 'All', status: 'Status', order_status: { whatsapp_prepared: 'New order', confirmed: 'Received', preparing: 'Preparing', ready: 'Ready', out_for_delivery: 'Out for delivery', completed: 'Delivered / done', cancelled: 'Cancelled' },
     pickup: 'Pickup', delivery: 'Delivery', customer: 'Customer', phone: 'Phone', address: 'Address', map: 'Map', notes: 'Notes', items: 'Items', history: 'History', note: 'Note', set_status: 'Change status', more: 'Load more', total: 'Total', subtotal: 'Subtotal', delivery_fee: 'Delivery fee', copy_msg: 'WhatsApp message',
     categories: 'Categories', products: 'Products', add_category: 'New category', add_product: 'New product', name_ar: 'Arabic name', name_en: 'English name', desc_ar: 'Arabic description', desc_en: 'English description',
     category: 'Category', visible: 'Visible on the site', sold_out: 'Sold out', image: 'Image', upload: 'Upload image', remove_image: 'Remove image', sizes: 'Sizes and prices', size_name_ar: 'Size (Arabic)', size_name_en: 'Size (English)', price: 'Price (LBP)', price_unset: 'No price', available: 'Available',
@@ -60,5 +65,10 @@ export const S = {
     wa_number: 'WhatsApp number (with country code or local)', wa_enabled: 'Enable ordering on WhatsApp', wa_template: 'Order message template', wa_template_help: 'Leave empty for the default message. Available variables:', delivery_enabled: 'Enable delivery', pickup_enabled: 'Enable pickup', delivery_fee_lbp: 'Delivery fee (LBP)', min_order_lbp: 'Minimum order (LBP)', note_ar: 'Delivery note (Arabic)', note_en: 'Delivery note (English)', whatsapp: 'WhatsApp', delivery_settings: 'Delivery and pickup',
     change_password: 'Change password', current_password: 'Current password', new_password: 'New password', repeat_password: 'Repeat the password',
     err_wrong_password: 'The current password is wrong', lang_toggle: 'العربية',
+    login_id: 'Username or email', full_name: 'Full name', username: 'Username', tab_staff: 'Staff', err_taken: 'That username or email is already used', err_forbidden: 'You do not have permission for this action', err_last_super: 'The last Super Admin cannot be disabled or deleted', err_self: 'You cannot disable or delete your own account', err_not_yours: 'This order belongs to another employee', err_claim_first: 'Receive the order first', err_assigned: 'The order is with another employee', err_closed_order: 'The order is closed',
+    role: 'Role', roles: { super_admin: 'Super Admin', manager: 'Manager', staff: 'Staff' }, active: 'Active', inactive: 'Disabled', add_user: 'New user', edit_user: 'Edit user', new_password_optional: 'New password (leave empty to keep)', email_optional: 'Email (optional)',
+    claim: 'Receive the order', release: 'Return to the queue', assign: 'Assign to', responsible: 'Responsible employee', unassigned: 'Unassigned', my_orders: 'My orders', only_unassigned: 'Unassigned', assigned_since: 'since', none: '—',
+    active_orders: 'Current orders', handled_orders: 'Orders handled', last_activity: 'Last activity', waiting_orders: 'Orders waiting to be received', current_orders: 'Current orders', past_orders: 'Past orders', recent_activity: 'Recent actions', never: 'Not yet', details: 'Details',
+    ev_created: 'Order created', ev_claimed: 'Received by {actor}', ev_assigned: 'Assigned to {target}, by {actor}', ev_released: 'Returned to the queue, by {actor}', ev_status: '{status}, by {actor}', ev_note: 'Note, {actor}', activity_log: 'Order activity log',
   },
 };

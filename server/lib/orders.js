@@ -5,8 +5,11 @@ const { httpError, isUniqueViolation } = require('./util');
 const { normalizePhone, buildOrderMessage, whatsappUrl } = require('./whatsapp');
 const { evaluateStore } = require('./hours');
 const { truthy } = require('./catalog');
+const { can } = require('./permissions');
 
-const ORDER_STATUSES = ['whatsapp_prepared', 'confirmed', 'preparing', 'completed', 'cancelled'];
+const ORDER_STATUSES = ['whatsapp_prepared', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'completed', 'cancelled'];
+const ACTIVE_STATUSES = ['confirmed', 'preparing', 'ready', 'out_for_delivery'];
+const CLOSED_STATUSES = ['completed', 'cancelled'];
 const MAX_QTY = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -186,14 +189,24 @@ async function createOrder(db, settings, raw, now = new Date()) {
 }
 
 // ---------------------------------------------------------------- admin side
-async function listOrders(db, { status, limit = 30, offset = 0 } = {}) {
-  const where = status ? 'WHERE status = $1' : '';
-  const params = status ? [status] : [];
+const touch = (client, adminId) => client.query('UPDATE admins SET last_activity_at = CURRENT_TIMESTAMP WHERE id = $1', [adminId]);
+const logEvent = (client, orderId, { event, status, actor, target = '', note = '' }) => client.query(
+  `INSERT INTO order_status_history (order_id, status, changed_by, note, event, actor_name, target_name) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+  [orderId, status, actor.id, String(note || '').slice(0, 300), event, actor.name, target]);
+
+// filters: status, assigned ('none' | admin id)
+async function listOrders(db, { status, assigned, limit = 30, offset = 0 } = {}) {
+  const where = []; const params = [];
+  if (status) { params.push(status); where.push(`status = $${params.length}`); }
+  if (assigned === 'none') where.push('assigned_to IS NULL');
+  else if (Number.isInteger(assigned)) { params.push(assigned); where.push(`assigned_to = $${params.length}`); }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = (await db.query(
-    `SELECT id, public_code, customer_name, phone, fulfillment, subtotal_lbp, delivery_fee_lbp, total_lbp, status, created_at, language
-     FROM orders ${where} ORDER BY created_at DESC, id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    `SELECT id, public_code, customer_name, phone, fulfillment, subtotal_lbp, delivery_fee_lbp, total_lbp, status, created_at, language,
+            assigned_to, assigned_name, assigned_at
+     FROM orders ${clause} ORDER BY created_at DESC, id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, offset])).rows;
-  const total = (await db.query(`SELECT count(*) AS n FROM orders ${where}`, params)).rows[0].n;
+  const total = (await db.query(`SELECT count(*) AS n FROM orders ${clause}`, params)).rows[0].n;
   return { orders: rows, total: Number(total) };
 }
 
@@ -202,19 +215,74 @@ async function getOrder(db, id) {
   if (!order) throw httpError(404, 'not_found');
   const items = (await db.query('SELECT * FROM order_items WHERE order_id = $1 ORDER BY id', [id])).rows;
   const history = (await db.query(
-    `SELECT h.id, h.status, h.note, h.created_at, a.email AS changed_by_email
-     FROM order_status_history h LEFT JOIN admins a ON a.id = h.changed_by WHERE h.order_id = $1 ORDER BY h.created_at, h.id`, [id])).rows;
+    `SELECT id, event, status, note, created_at, changed_by, actor_name, target_name
+     FROM order_status_history WHERE order_id = $1 ORDER BY created_at, id`, [id])).rows;
   return { order, items, history };
 }
 
-async function updateOrderStatus(db, id, status, note, adminId) {
-  if (!ORDER_STATUSES.includes(status)) throw httpError(400, 'validation', { errors: { status: 'invalid_choice' } });
-  await db.withTransaction(async (client) => {
-    const found = await client.query('SELECT id FROM orders WHERE id = $1', [id]);
-    if (!found.rows[0]) throw httpError(404, 'not_found');
-    await client.query('UPDATE orders SET status = $1 WHERE id = $2', [status, id]);
-    await client.query('INSERT INTO order_status_history (order_id, status, changed_by, note) VALUES ($1,$2,$3,$4)', [id, status, adminId, String(note || '').slice(0, 300)]);
+async function loadForUpdate(client, id) {
+  const o = (await client.query('SELECT id, status, assigned_to, assigned_name FROM orders WHERE id = $1', [id])).rows[0];
+  if (!o) throw httpError(404, 'not_found');
+  return o;
+}
+
+// "Receive the order": records the employee as responsible and moves a new order to "confirmed".
+async function claimOrder(db, id, actor) {
+  return db.withTransaction(async (client) => {
+    const o = await loadForUpdate(client, id);
+    if (CLOSED_STATUSES.includes(o.status)) throw httpError(409, 'order_closed');
+    if (o.assigned_to === actor.id) return { already: true };
+    if (o.assigned_to) throw httpError(409, 'already_assigned', { assigned_name: o.assigned_name });
+    const next = o.status === 'whatsapp_prepared' ? 'confirmed' : o.status;
+    await client.query('UPDATE orders SET assigned_to = $1, assigned_name = $2, assigned_at = CURRENT_TIMESTAMP, status = $3 WHERE id = $4', [actor.id, actor.name, next, id]);
+    await logEvent(client, id, { event: 'claimed', status: next, actor });
+    await touch(client, actor.id);
+    return { already: false, status: next };
   });
 }
 
-module.exports = { ORDER_STATUSES, createOrder, priceItems, listOrders, getOrder, updateOrderStatus, orderShape };
+async function assignOrder(db, id, targetId, actor) {
+  return db.withTransaction(async (client) => {
+    const o = await loadForUpdate(client, id);
+    if (CLOSED_STATUSES.includes(o.status)) throw httpError(409, 'order_closed');
+    const t = (await client.query('SELECT id, full_name, username, email, is_active FROM admins WHERE id = $1', [targetId])).rows[0];
+    if (!t || !truthy(t.is_active)) throw httpError(400, 'validation', { errors: { admin_id: 'unknown_user' } });
+    const targetName = t.full_name || t.username || t.email || '';
+    const next = o.status === 'whatsapp_prepared' ? 'confirmed' : o.status;
+    await client.query('UPDATE orders SET assigned_to = $1, assigned_name = $2, assigned_at = CURRENT_TIMESTAMP, status = $3 WHERE id = $4', [t.id, targetName, next, id]);
+    await logEvent(client, id, { event: 'assigned', status: next, actor, target: targetName });
+    await touch(client, actor.id);
+  });
+}
+
+async function releaseOrder(db, id, actor) {
+  await db.withTransaction(async (client) => {
+    const o = await loadForUpdate(client, id);
+    if (!o.assigned_to) throw httpError(409, 'not_assigned');
+    const mine = o.assigned_to === actor.id;
+    if (!(can(actor.role, 'orders.release') || (mine && can(actor.role, 'orders.release_own')))) throw httpError(403, 'forbidden');
+    await client.query("UPDATE orders SET assigned_to = NULL, assigned_name = '', assigned_at = NULL WHERE id = $1", [id]);
+    await logEvent(client, id, { event: 'released', status: o.status, actor, target: o.assigned_name });
+    await touch(client, actor.id);
+  });
+}
+
+async function updateOrderStatus(db, id, status, note, actor) {
+  if (!ORDER_STATUSES.includes(status)) throw httpError(400, 'validation', { errors: { status: 'invalid_choice' } });
+  await db.withTransaction(async (client) => {
+    const o = await loadForUpdate(client, id);
+    if (!can(actor.role, 'orders.update')) {
+      if (!can(actor.role, 'orders.update_own')) throw httpError(403, 'forbidden');
+      if (o.assigned_to !== actor.id) throw httpError(403, o.assigned_to ? 'not_your_order' : 'claim_first', { assigned_name: o.assigned_name });
+    }
+    if (o.status === status) return;
+    await client.query('UPDATE orders SET status = $1 WHERE id = $2', [status, id]);
+    await logEvent(client, id, { event: 'status', status, actor, note });
+    await touch(client, actor.id);
+  });
+}
+
+module.exports = {
+  ORDER_STATUSES, ACTIVE_STATUSES, CLOSED_STATUSES, createOrder, priceItems, listOrders, getOrder,
+  claimOrder, assignOrder, releaseOrder, updateOrderStatus, orderShape,
+};

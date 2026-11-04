@@ -47,8 +47,8 @@ export function createSheets(ctx) {
   ];
 
   // ---------------------------------------------------------------- product
-  function openProduct(product) {
-    const firstSize = product.sizes.find((s) => s.price_lbp != null) || product.sizes[0];
+  function openProduct(product, preferredSizeId) {
+    const firstSize = product.sizes.find((s) => s.id === preferredSizeId && s.price_lbp != null) || product.sizes.find((s) => s.price_lbp != null) || product.sizes[0];
     const pick = { sizeId: firstSize && firstSize.id, chosen: new Set(), notes: '', qty: 1, invalid: new Set() };
     let imgEl = null;
 
@@ -240,5 +240,8 @@ export function createSheets(ctx) {
     });
   }
 
-  return { openProduct, openTray, openCheckout, closeSheet, current: () => current, rerender: () => current && current.render() };
+  // generic sheet used by the menu button (contact, hours, social)
+  function openInfo(title, build) { return showSheet('info', () => [head(title), build()]); }
+
+  return { openProduct, openTray, openCheckout, openInfo, closeSheet, current: () => current, rerender: () => current && current.render() };
 }

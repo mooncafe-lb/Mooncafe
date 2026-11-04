@@ -2,6 +2,8 @@ import { h, clear } from '../js/h.js';
 import { S } from './strings.js';
 
 export const state = { lang: 'ar', admin: null, data: null, onUnauthorized: () => {} };
+// permission check for the signed-in user (the server checks again on every request)
+export const has = (perm) => !!state.admin && (state.admin.permissions.includes('*') || state.admin.permissions.includes(perm));
 export const t = (key, vars = {}) => {
   const raw = S[state.lang][key] !== undefined ? S[state.lang][key] : key;
   return typeof raw === 'string' ? raw.replace(/\{(\w+)\}/g, (_, k) => vars[k]) : raw;
@@ -36,6 +38,14 @@ export function errorText(err) {
   if (b.error === 'invalid_setup_token') return t('err_setup_token');
   if (b.error === 'already_setup') return t('err_already');
   if (b.error === 'wrong_password') return t('err_wrong_password');
+  if (b.error === 'username_taken' || b.error === 'email_taken') return t('err_taken');
+  if (b.error === 'forbidden' || err.status === 403) return t('err_forbidden');
+  if (b.error === 'last_super_admin') return t('err_last_super');
+  if (b.error === 'cannot_disable_self' || b.error === 'cannot_delete_self') return t('err_self');
+  if (b.error === 'not_your_order') return t('err_not_yours');
+  if (b.error === 'claim_first') return t('err_claim_first');
+  if (b.error === 'already_assigned') return `${t('err_assigned')}${b.assigned_name ? `: ${b.assigned_name}` : ''}`;
+  if (b.error === 'order_closed') return t('err_closed_order');
   if (b.error === 'validation') return t('err_validation');
   return t('err_generic');
 }

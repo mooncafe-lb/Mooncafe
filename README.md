@@ -25,13 +25,31 @@ Stack: Node 20+, Express, PostgreSQL (Render). No build step. Start: `npm start`
 * `apply`: applies pending migrations permanently. Use only after a clean dry-run, then set it back to `hold`.
 
 Migrations: `001` base schema, `002` menu structure, `003` menu seed (34 products, Coffee unpriced),
-`004` admin sessions. Never edit an applied migration: add a new numbered file.
+`004` admin sessions, `005` staff accounts, order assignment and activity log. Never edit an applied migration:
+add a new numbered file. All of 002-005 are additive (no DROP TABLE/COLUMN, no DELETE).
 
 ## First run
 
 1. Set `SETUP_TOKEN` in Render, deploy, open `/admin`, create the admin (needs migrations applied).
 2. Dashboard: set the opening hours (the cafe is CLOSED until hours or a manual override exist), set Coffee prices
    (products without a price show "Price coming soon" and cannot be ordered), upload product photos.
+
+## Staff, roles and order tracking (dashboard at `/admin`)
+
+| Role | Can do |
+|---|---|
+| Super Admin | everything: menu, settings, brand, WhatsApp, users (add/edit/disable/delete), orders |
+| Manager | all orders (assign, release, update), staff dashboard, add/edit staff accounts. No menu, no site settings, no deleting users, cannot create managers |
+| Staff | see orders, receive an order ("استلام الطلب"), update status **only of their own orders**, return their own order to the queue |
+
+* Sign-in is by username or email. Every account has a real full name; that name is written on the order and in the
+  log at the moment of each action (it stays readable even if the account is deleted later).
+* Order stages: new, received, preparing, ready, out for delivery, delivered/done, cancelled.
+* The order page shows "Responsible employee" and the full activity log (created, received by, assigned to,
+  every status change with the person and the time). The Staff tab shows, per employee, current orders, orders handled,
+  last activity and past orders.
+* Permissions are checked on the server on every request (`server/lib/permissions.js`); the browser only hides buttons.
+  The last active Super Admin cannot be disabled, demoted or deleted; nobody can disable or delete their own account.
 
 ## Rules enforced on the server
 

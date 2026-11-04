@@ -1,10 +1,12 @@
-import { h, clear, t, call, toast, errorText, fields, state, closeSheet, CallError } from './core.js';
+import { h, clear, t, call, toast, errorText, fields, state, closeSheet, CallError, has } from './core.js';
 import { renderMenu } from './menu.js';
 import { renderOrders } from './orders.js';
+import { renderStaff } from './staff.js';
 import { renderStore, renderBrand, renderContent, renderTexts, renderWhatsapp } from './settings.js';
 
 const root = document.getElementById('admin');
-const TABS = ['orders', 'menu', 'store', 'brand', 'content', 'whatsapp', 'texts', 'account'];
+const TAB_PERMISSION = { orders: 'orders.view', staff: 'staff.view', menu: 'settings.manage', store: 'settings.manage', brand: 'settings.manage', content: 'settings.manage', whatsapp: 'settings.manage', texts: 'settings.manage', account: null };
+const allowedTabs = () => Object.keys(TAB_PERMISSION).filter((k) => !TAB_PERMISSION[k] || has(TAB_PERMISSION[k]));
 let tab = 'orders';
 try { state.lang = localStorage.getItem('mc_admin_lang') === 'en' ? 'en' : 'ar'; } catch (_) { /* default */ }
 
@@ -19,8 +21,9 @@ function notReady() {
 }
 
 function authScreen({ setup, tokenMissing }) {
-  const email = fields.text(t('email'), '', { dir: 'ltr' }); const pw = fields.text(t('password'), '', { dir: 'ltr' });
+  const email = fields.text(setup ? t('email') : t('login_id'), '', { dir: 'ltr' }); const pw = fields.text(t('password'), '', { dir: 'ltr' });
   const token = fields.text(t('setup_token'), '', { dir: 'ltr' }); const pw2 = fields.text(t('repeat_password'), '', { dir: 'ltr' });
+  const fullName = fields.text(t('full_name'), '', { max: 80 });
   const inputOf = (f) => f.el.children[1];
   inputOf(pw).setAttribute('type', 'password'); inputOf(pw2).setAttribute('type', 'password'); inputOf(email).setAttribute('autocomplete', 'username'); inputOf(pw).setAttribute('autocomplete', setup ? 'new-password' : 'current-password');
   const msg = h('div', { class: 'err', role: 'alert' });
@@ -30,16 +33,16 @@ function authScreen({ setup, tokenMissing }) {
       if (setup) {
         if (pw.get().length < 10) { msg.textContent = t('err_pw_short'); return; }
         if (pw.get() !== pw2.get()) { msg.textContent = t('err_pw_match'); return; }
-        await call('/setup', { method: 'POST', body: { token: token.get(), email: email.get(), password: pw.get() } });
+        await call('/setup', { method: 'POST', body: { token: token.get(), full_name: fullName.get(), email: email.get(), password: pw.get() } });
       }
-      const r = await call('/login', { method: 'POST', body: { email: email.get(), password: pw.get() } });
+      const r = await call('/login', { method: 'POST', body: { login: email.get(), password: pw.get() } });
       state.admin = r.admin; await start();
     } catch (e) { msg.textContent = errorText(e); }
   }
   shell(h('div', { class: 'top' }, h('h1', null, t('title')), langButton(() => authScreen({ setup, tokenMissing }))),
     h('section', { class: 'box narrow' }, h('h2', null, setup ? t('setup') : t('login')),
       tokenMissing ? h('p', { class: 'err' }, t('setup_missing')) : null, setup ? h('p', { class: 'hint' }, t('setup_help')) : null,
-      setup ? token.el : null, email.el, pw.el, setup ? pw2.el : null, msg,
+      setup ? token.el : null, setup ? fullName.el : null, email.el, pw.el, setup ? pw2.el : null, msg,
       tokenMissing ? null : h('button', { class: 'btn wide', type: 'button', onClick: submit }, setup ? t('setup') : t('login'))));
 }
 
@@ -47,7 +50,7 @@ function accountView() {
   const cur = fields.text(t('current_password'), '', { dir: 'ltr' }); const n1 = fields.text(t('new_password'), '', { dir: 'ltr' }); const n2 = fields.text(t('repeat_password'), '', { dir: 'ltr' });
   for (const f of [cur, n1, n2]) f.el.children[1].setAttribute('type', 'password');
   const msg = h('div', { class: 'err' });
-  return h('div', null, h('h2', null, t('tab_account')), h('p', { class: 'hint' }, state.admin.email),
+  return h('div', null, h('h2', null, t('tab_account')), h('p', { class: 'hint' }, `${state.admin.name} · ${t('roles')[state.admin.role]}`),
     h('section', { class: 'box narrow' }, h('h3', null, t('change_password')), cur.el, n1.el, n2.el, msg,
       h('button', { class: 'btn', type: 'button', onClick: async () => {
         msg.textContent = '';
@@ -60,17 +63,18 @@ function accountView() {
 async function reload() { state.data = await call('/bootstrap'); draw(); }
 
 function draw() {
+  if (!allowedTabs().includes(tab)) tab = allowedTabs()[0];
   const content = h('main', { class: 'content', id: 'tab-content' });
   const views = {
-    orders: () => renderOrders(content), menu: () => renderMenu(content, reload),
+    orders: () => renderOrders(content), staff: () => renderStaff(content), menu: () => renderMenu(content, reload),
     store: () => clear(content, renderStore()), brand: () => clear(content, renderBrand()), content: () => clear(content, renderContent()),
     whatsapp: () => clear(content, renderWhatsapp()), texts: () => clear(content, renderTexts()), account: () => clear(content, accountView()),
   };
   const label = (k) => t(`tab_${k}`);
   shell(
-    h('div', { class: 'top' }, h('h1', null, `${t('title')}`),
+    h('div', { class: 'top' }, h('h1', null, `${t('title')} · ${state.admin.name}`),
       langButton(draw), h('button', { class: 'lang', type: 'button', onClick: async () => { try { await call('/logout', { method: 'POST' }); } catch (_) { /* ignore */ } state.admin = null; await start(); } }, t('logout'))),
-    h('nav', { class: 'tabs' }, TABS.map((k) => h('button', { class: `tab${k === tab ? ' active' : ''}`, type: 'button', dataset: { tab: k }, onClick: () => { tab = k; closeSheet(); draw(); } }, label(k)))),
+    h('nav', { class: 'tabs' }, allowedTabs().map((k) => h('button', { class: `tab${k === tab ? ' active' : ''}`, type: 'button', dataset: { tab: k }, onClick: () => { tab = k; closeSheet(); draw(); } }, label(k)))),
     content);
   views[tab]();
 }
