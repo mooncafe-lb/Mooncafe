@@ -65,3 +65,23 @@ test('002 and 004 keep every existing row (admins, settings, images, products, o
   assert.equal((await db.query('SELECT size_name_en, special_instructions FROM order_items')).rows[0].special_instructions, '');
   assert.equal((await db.query('SELECT thumb, sha256 FROM images')).rows[0].thumb, null);
 });
+
+test('005 finds the CHECK constraints by the column they restrict (not by their text or name) and touches nothing else', () => {
+  const sql = fs.readFileSync(path.join(DIR, '005_staff_and_order_tracking.sql'), 'utf8').replace(/--[^\n]*/g, '');
+  assert.ok(!/LIKE\s+'%/i.test(sql), 'must not search constraint text');
+  assert.ok(sql.includes("conkey = ARRAY[role_col]") && sql.includes("conkey = ARRAY[status_col]"));
+  const drops = [...sql.matchAll(/DROP CONSTRAINT/g)].length;
+  assert.equal(drops, 2);                                                                  // only the two catalog-driven loops
+  assert.equal([...sql.matchAll(/EXECUTE format\('ALTER TABLE (admins|orders) DROP CONSTRAINT %I', c\.conname\)/g)].length, 2);
+  assert.ok(!/DELETE\s+FROM|TRUNCATE|DROP\s+(TABLE|COLUMN|INDEX)|^\s*UPDATE\b/im.test(sql));
+  assert.deepEqual([...sql.matchAll(/ON DELETE (\w+ \w+)/g)].map((m) => m[1]), ['SET NULL', 'SET NULL']);
+  // the new lists: roles include 'owner' (existing admin keeps working); statuses are a superset of the 001 list
+  const roles = sql.match(/ADD CONSTRAINT admins_role_check CHECK \(role IN \(([^)]*)\)\)/)[1].match(/'(\w+)'/g).map((x) => x.slice(1, -1));
+  assert.deepEqual(roles, ['owner', 'super_admin', 'manager', 'staff']);
+  const next = sql.match(/ADD CONSTRAINT orders_status_check\s+CHECK \(status IN \(([^)]*)\)\)/)[1].match(/'(\w+)'/g).map((x) => x.slice(1, -1));
+  const old = fs.readFileSync(path.join(DIR, '001_init.sql'), 'utf8').match(/CHECK \(status IN \(([^)]*)\)\)/)[1].match(/'(\w+)'/g).map((x) => x.slice(1, -1));
+  assert.deepEqual(next, ['whatsapp_prepared', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'completed', 'cancelled']);
+  for (const status of old) assert.ok(next.includes(status), `${status} must stay valid`);
+  // the data guards run before anything is dropped
+  assert.ok(sql.indexOf('role NOT IN') < sql.indexOf('DROP CONSTRAINT') && sql.indexOf('status NOT IN') < sql.indexOf('DROP CONSTRAINT'));
+});
