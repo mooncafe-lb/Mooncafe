@@ -183,11 +183,6 @@ function requireAdmin(db, config, now = () => new Date()) {
 const cookieOptions = (config, maxAge) => ({ httpOnly: true, sameSite: 'strict', secure: !!config.isProd, path: '/', maxAge });
 
 module.exports = {
-  COOKIE, hashPassword, verifyPassword, tokenHash, setupFirstAdmin, login, sessionAdmin, logout, changePassword,
-  requireAdmin, checkCsrf, cookieOptions, adminCount, MAX_FAILS, publicAdmin, newPasswordRule,
-};
-
-module.exports = {
   COOKIE, hashPassword, verifyPassword, tokenHash,
   setupFirstAdmin, resetAdminPassword, login,
   sessionAdmin, logout, changePassword,
