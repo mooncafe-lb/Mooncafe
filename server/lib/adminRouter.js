@@ -45,12 +45,13 @@ function createAdminRouter({ db, config, now = () => new Date() }) {
     if (!auth.checkCsrf(req)) throw httpError(403, 'csrf');
     const admin = await auth.setupFirstAdmin(db, config, req.body);
     res.status(201).json({ ok: true, email: admin.email });
-    const resetLimiter = rateLimit({
+  }));
+  
+ const resetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   key: 'admin-password-reset'
-});
-  }));
+}); 
   
 router.post('/reset-password', resetLimiter, needReady, wrap(async (req, res) => {
   if (!auth.checkCsrf(req)) throw httpError(403, 'csrf');
