@@ -16,6 +16,10 @@ const PROBES = {
     'SELECT id, role, is_active, failed_attempts, locked_until FROM admins LIMIT 1',
     'SELECT id, admin_id, token_hash, expires_at FROM admin_sessions LIMIT 1',
   ],
+  tracking: [
+    'SELECT id, order_date, daily_number, tracking_token, rating, rating_comment, rated_at FROM orders LIMIT 1',
+    'SELECT order_date, last_number FROM order_counters LIMIT 1',
+  ],
   staff: [
     'SELECT id, username, full_name, last_activity_at, created_by FROM admins LIMIT 1',
     'SELECT id, assigned_to, assigned_name, assigned_at FROM orders LIMIT 1',
@@ -34,7 +38,7 @@ function createSchemaChecker(db, ttlMs = 15000) {
   }
   return async function status(force = false) {
     if (!force && cache && Date.now() - at < ttlMs) return cache;
-    cache = { menu: await probe(PROBES.menu), admin: await probe(PROBES.admin), staff: await probe(PROBES.staff) };
+    cache = { menu: await probe(PROBES.menu), admin: await probe(PROBES.admin), staff: await probe(PROBES.staff), tracking: await probe(PROBES.tracking) };
     at = Date.now();
     return cache;
   };

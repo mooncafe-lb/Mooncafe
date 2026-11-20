@@ -1,4 +1,4 @@
-import { h, clear, t, call, toast, errorText, fields, sheet, closeSheet, confirmDialog, imagePicker, state } from './core.js';
+import { h, clear, t, call, toast, errorText, fields, sheet, closeSheet, confirmDialog, imagePicker, imageProblem, state } from './core.js';
 
 const nm = (o) => (state.lang === 'ar' ? o.name_ar : o.name_en) || o.name_en || o.name_ar || '';
 const money = (n) => Number(n).toLocaleString('en-US');
@@ -56,6 +56,8 @@ function categoryEditor(cat, reload) {
     };
     const msg = h('div', { class: 'err' });
     const save = async () => {
+      const problem = imageProblem(f.image);
+      if (problem) { msg.textContent = problem; return; }
       const payload = { name_ar: f.name_ar.get(), name_en: f.name_en.get(), is_visible: f.visible.get(), image_id: f.image.get() };
       try { await call(cat ? `/categories/${cat.id}` : '/categories', { method: cat ? 'PUT' : 'POST', body: payload }); toast(t('saved')); close(); await reload(); } catch (e) { msg.textContent = `${errorText(e)} ${errorLines(e)}`; }
     };
@@ -131,6 +133,8 @@ function productEditor(product, categoryId, reload) {
 
     const msg = h('div', { class: 'err' });
     const save = async () => {
+      const problem = imageProblem(f.image);
+      if (problem) { msg.textContent = problem; return; }
       const payload = {
         category_id: Number(f.category.get()), name_ar: f.name_ar.get(), name_en: f.name_en.get(), description_ar: f.desc_ar.get(), description_en: f.desc_en.get(),
         image_id: f.image.get(), is_visible: f.visible.get(), is_available: !f.soldOut.get(),
@@ -140,8 +144,22 @@ function productEditor(product, categoryId, reload) {
           choices: g.choices.map((c) => ({ id: c.id, name_ar: c.f.name_ar.get(), name_en: c.f.name_en.get(), price_delta_lbp: c.f.delta.get() || 0, is_available: c.f.available.get() })),
         })),
       };
-      try { await call(product ? `/products/${product.id}` : '/products', { method: product ? 'PUT' : 'POST', body: payload }); toast(t('saved')); close(); await reload(); }
-      catch (e) { msg.textContent = `${errorText(e)} ${errorLines(e)}`; }
+      try {
+        const res = await call(product ? `/products/${product.id}` : '/products', { method: product ? 'PUT' : 'POST', body: payload });
+        // "Saved" is only shown after reading the product back: the image must be linked to it, and (when the product is visible)
+        // the customer menu must really serve that image.
+        const productId = product ? product.id : res.id;
+        const fresh = await call('/bootstrap');
+        const saved = fresh.categories.flatMap((c) => c.products).find((p) => p.id === productId);
+        state.data = fresh;
+        if (!saved || (saved.image_id || null) !== (payload.image_id || null)) { msg.textContent = t('err_img_not_saved'); return; }
+        if (saved.image_id && payload.is_visible) {
+          const menu = await (await fetch('/api/menu', { credentials: 'same-origin' })).json();
+          const live = menu.categories.flatMap((c) => c.products).find((p) => p.id === productId);
+          if (live && !String(live.thumb_url || '').includes(`/api/images/${saved.image_id}`)) { msg.textContent = t('err_img_not_saved'); return; }
+        }
+        toast(t('saved')); close(); await reload();
+      } catch (e) { msg.textContent = `${errorText(e)} ${errorLines(e)}`; }
     };
     const del = async () => {
       if (!confirmDialog(t('yes_delete'))) return;

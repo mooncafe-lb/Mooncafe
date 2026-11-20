@@ -10,8 +10,8 @@ const { createTestDb, applyMigration } = require('./helpers/db');
 const DIR = path.join(__dirname, '..', 'migrations');
 const files = fs.readdirSync(DIR).filter((f) => /^\d+_.+\.sql$/.test(f)).sort();
 
-test('migration files are numbered 001..005 with no gaps and no duplicates', () => {
-  assert.deepEqual(files, ['001_init.sql', '002_menu_structure.sql', '003_seed_menu.sql', '004_admin_security.sql', '005_staff_and_order_tracking.sql']);
+test('migration files are numbered 001..006 with no gaps and no duplicates', () => {
+  assert.deepEqual(files, ['001_init.sql', '002_menu_structure.sql', '003_seed_menu.sql', '004_admin_security.sql', '005_staff_and_order_tracking.sql', '006_order_tracking.sql']);
 });
 
 test('002, 003 and 004 contain no DROP TABLE/COLUMN, TRUNCATE or DELETE', () => {
@@ -42,6 +42,7 @@ test('002 and 004 keep every existing row (admins, settings, images, products, o
   applyMigration(db, '002_menu_structure.sql');
   applyMigration(db, '004_admin_security.sql');
   applyMigration(db, '005_staff_and_order_tracking.sql');
+  applyMigration(db, '006_order_tracking.sql');
   // the two portable data statements of 002 (the rest is PostgreSQL-only and is covered by the dry-run on Render)
   await db.query("INSERT INTO product_sizes (product_id, name_ar, name_en, price_lbp, sort_order) SELECT p.id, 'عادي', 'Regular', NULLIF(p.price_lbp, 0), 0 FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_sizes s WHERE s.product_id = p.id)");
   await db.query('INSERT INTO order_status_history (order_id, status, created_at) SELECT id, status, created_at FROM orders');
@@ -63,6 +64,10 @@ test('002 and 004 keep every existing row (admins, settings, images, products, o
   assert.deepEqual([order.language, order.request_id, order.whatsapp_message], ['ar', null, null]);
   assert.equal((await db.query('SELECT status FROM order_status_history')).rows[0].status, 'confirmed');
   assert.equal((await db.query('SELECT size_name_en, special_instructions FROM order_items')).rows[0].special_instructions, '');
+  const o6 = (await db.query('SELECT order_date, daily_number, tracking_token, rating, rating_comment, rated_at, public_code, total_lbp FROM orders')).rows[0];
+  assert.deepEqual([o6.order_date, o6.daily_number, o6.tracking_token, o6.rating, o6.rating_comment, o6.rated_at], [null, null, null, null, '', null]);   // old orders are left exactly as they were
+  assert.deepEqual([o6.public_code, o6.total_lbp], ['MC-OLD111', 90000]);
+  assert.equal((await db.query('SELECT count(*) AS n FROM order_counters')).rows[0].n, 0);
   assert.equal((await db.query('SELECT thumb, sha256 FROM images')).rows[0].thumb, null);
 });
 
@@ -84,4 +89,15 @@ test('005 finds the CHECK constraints by the column they restrict (not by their 
   for (const status of old) assert.ok(next.includes(status), `${status} must stay valid`);
   // the data guards run before anything is dropped
   assert.ok(sql.indexOf('role NOT IN') < sql.indexOf('DROP CONSTRAINT') && sql.indexOf('status NOT IN') < sql.indexOf('DROP CONSTRAINT'));
+});
+
+test('006 is additive: a counter table, new nullable columns and indexes; no data statements', () => {
+  const sql = fs.readFileSync(path.join(DIR, '006_order_tracking.sql'), 'utf8').replace(/--[^\n]*/g, '');
+  assert.ok(!/DELETE\s+FROM|TRUNCATE|DROP\s|^\s*UPDATE\b|^\s*INSERT\b/im.test(sql));
+  assert.deepEqual([...sql.matchAll(/^CREATE TABLE (\w+)/gim)].map((m) => m[1]), ['order_counters']);
+  assert.deepEqual([...sql.matchAll(/ALTER TABLE orders ADD COLUMN (\w+)/g)].map((m) => m[1]), ['order_date', 'daily_number', 'tracking_token', 'rating', 'rating_comment', 'rated_at']);
+  // the daily number alone is never unique: uniqueness is (order_date, daily_number); the token has its own unique index
+  assert.match(sql, /CREATE UNIQUE INDEX orders_order_date_number_uq\s+ON orders \(order_date, daily_number\)/);
+  assert.match(sql, /CREATE UNIQUE INDEX orders_tracking_token_uq\s+ON orders \(tracking_token\)/);
+  assert.ok(!/UNIQUE[^\n]*\(daily_number\)/.test(sql));
 });

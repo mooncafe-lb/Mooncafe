@@ -22,14 +22,14 @@ export function renderStaff(container) {
     h('div', { class: 'row' }, h('div', null, h('b', null, s.name), h('span', { class: 'badge' }, t('roles')[s.role]), !s.is_active ? h('span', { class: 'badge warn' }, t('inactive')) : null),
       h('button', { class: 'btn small ghost', type: 'button', onClick: () => history(s) }, t('details'))),
     h('div', { class: 'stats' }, h('span', null, `${t('active_orders')}: `, h('b', null, String(s.active_orders))), h('span', null, `${t('handled_orders')}: `, h('b', null, String(s.handled_orders))), h('span', null, `${t('last_activity')}: `, h('b', null, when(s.last_activity_at)))),
-    s.current_orders.length ? h('div', { class: 'chips' }, s.current_orders.map((o) => h('span', { class: `badge st-${o.status}` }, `${o.code} · ${statusText(o.status)}`))) : null);
+    s.current_orders.length ? h('div', { class: 'chips' }, s.current_orders.map((o) => h('span', { class: `badge st-${o.status}` }, `${o.number ? `#${o.number}` : o.code} · ${statusText(o.status)}`))) : null);
 
   async function history(s) {
     let data;
     try { data = await call(`/staff/${s.id}/history`); } catch (e) { toast(errorText(e), true); return; }
     sheet(data.user.name, (body) => body.appendChild(h('div', null,
-      h('h3', null, t('past_orders')), data.orders.length ? data.orders.map((o) => h('div', { class: 'list-row' }, h('div', { class: 'grow' }, h('b', null, o.public_code), h('small', { class: 'hint' }, ` ${when(o.created_at)}`)), h('span', { class: `badge st-${o.status}` }, statusText(o.status)), h('b', null, money(o.total_lbp)))) : h('p', { class: 'hint' }, t('empty')),
-      h('h3', null, t('recent_activity')), h('ol', { class: 'log' }, data.activity.map((a) => h('li', { class: 'log-row' }, h('time', null, when(a.created_at)), h('span', null, ` — ${a.public_code}: ${eventText({ event: a.event, status: a.status, target_name: a.target_name, actor_name: data.user.name, changed_by: s.id })}`)))))));
+      h('h3', null, t('past_orders')), data.orders.length ? data.orders.map((o) => h('div', { class: 'list-row' }, h('div', { class: 'grow' }, h('b', { dir: 'ltr' }, o.daily_number ? `#${o.daily_number}` : o.public_code), h('small', { class: 'hint' }, ` ${when(o.created_at)}`)), h('span', { class: `badge st-${o.status}` }, statusText(o.status)), h('b', null, money(o.total_lbp)))) : h('p', { class: 'hint' }, t('empty')),
+      h('h3', null, t('recent_activity')), h('ol', { class: 'log' }, data.activity.map((a) => h('li', { class: 'log-row' }, h('time', null, when(a.created_at)), h('span', null, ` — ${a.daily_number ? `#${a.daily_number}` : a.public_code}: ${eventText({ event: a.event, status: a.status, target_name: a.target_name, actor_name: data.user.name, changed_by: s.id })}`)))))));
   }
 
   const userRow = (u) => h('div', { class: 'list-row', dataset: { user: String(u.id) } },

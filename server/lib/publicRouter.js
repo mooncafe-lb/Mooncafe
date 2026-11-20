@@ -6,6 +6,7 @@ const { loadMenu } = require('./catalog');
 const { evaluateStore } = require('./hours');
 const { createOrder } = require('./orders');
 const { normalizePhone } = require('./whatsapp');
+const { getTracking, rateOrder } = require('./tracking');
 const { loadImage } = require('./images');
 const { buildSeedMenu } = require('../seed/menu');
 
@@ -45,6 +46,9 @@ function createPublicRouter({ db, config, now = () => new Date() }) {
   const router = express.Router();
   const schema = createSchemaChecker(db);
   const orderLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, key: 'orders' });
+  const trackLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, key: 'track' });
+  const ratingLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, key: 'rating' });
+  const baseUrl = (req) => config.publicBaseUrl || `${req.protocol || 'https'}://${req.get('host') || 'localhost'}`;
 
   router.get('/store', wrap(async (req, res) => {
     const ready = (await schema()).menu;
@@ -75,8 +79,22 @@ function createPublicRouter({ db, config, now = () => new Date() }) {
   router.post('/orders', orderLimiter, wrap(async (req, res) => {
     if (!(await schema()).menu) throw httpError(503, 'not_ready');
     const settings = await loadAll(db);
-    const result = await createOrder(db, settings, req.body, now());
+    const { tracking } = await schema();
+    const { internal_id: _internal, ...result } = await createOrder(db, settings, req.body, now(), { tracking, baseUrl: baseUrl(req) });   // internal ids never leave the server
     res.status(result.duplicate ? 200 : 201).json(result);
+  }));
+
+  // ---- customer tracking: the secret token in the link is the only key
+  router.get('/track/:token', trackLimiter, wrap(async (req, res) => {
+    if (!(await schema()).tracking) throw httpError(404, 'not_found');
+    res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+    res.json(await getTracking(db, req.params.token, await loadAll(db)));
+  }));
+  router.post('/track/:token/rating', ratingLimiter, wrap(async (req, res) => {
+    if (!(await schema()).tracking) throw httpError(404, 'not_found');
+    await rateOrder(db, req.params.token, req.body);
+    res.set('Cache-Control', 'no-store');
+    res.status(201).json({ ok: true });
   }));
 
   router.use(errorMiddleware);

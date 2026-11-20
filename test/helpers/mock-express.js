@@ -10,7 +10,7 @@ function Router() {
 }
 const express = () => { throw new Error('not used'); };
 express.Router = Router;
-express.raw = () => function rawParser() {};
+express.raw = () => function rawParser(req, res, next) { return next(); };   // the real one fills req.body with the file bytes; tests pass a Buffer directly
 module.exports = express;
 
 // Dispatch a fake request through a router (same order express would use).
@@ -23,10 +23,12 @@ async function dispatch(router, { method, url, body, headers = {}, cookies = {},
   res.json = (b) => { res.body = b; res.ended = true; return res; };
   res.send = (b) => { res.body = b; res.ended = true; return res; };
   res.end = () => { res.ended = true; return res; };
+  res.sendFile = (f) => { res.sentFile = f; res.ended = true; return res; };
   res.cookie = (n, v, o) => { res.cookiesSet[n] = { value: v, options: o }; return res; };
   res.clearCookie = (n) => { delete res.cookiesSet[n]; res.cleared = n; return res; };
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
-  const req = { method, url, query, body, cookies, ip, params: {}, get: (h) => lower[h.toLowerCase()] };
+  lower.host = lower.host || 'moon.test';
+  const req = { method, url, query, body, cookies, ip, params: {}, protocol: 'https', get: (h) => lower[h.toLowerCase()] };
 
   const matches = (route) => {
     if (route.method === 'USE') return {};

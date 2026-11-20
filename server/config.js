@@ -29,4 +29,5 @@ module.exports = {
   dbSsl: !isLocalDb,
   sessionSecret: env.SESSION_SECRET || 'dev-only-secret-dev-only-secret-dev-only',
   setupToken: env.SETUP_TOKEN || '',
+  publicBaseUrl: (env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),   // optional, e.g. https://mooncafe.example.com ; default is the address the customer used
 };

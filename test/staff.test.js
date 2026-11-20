@@ -32,8 +32,8 @@ async function team() {
   const mohamad = await mk('Mohamad Saad', 'mohamad', 'staff');
   const place = async () => {
     const mango = (await db.query("SELECT p.id, s.id AS sid FROM products p JOIN product_sizes s ON s.product_id=p.id WHERE p.name_en='Mango' AND s.name_en='Large'")).rows[0];
-    const r = await orders.createOrder(db, await loadAll(db), { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] });
-    return r.order.id;
+    const r = await orders.createOrder(db, await loadAll(db), { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] }, new Date(), { tracking: true, baseUrl: 'https://moon.test' });
+    return r.internal_id;
   };
   return { db, boss, manager, ahmad, mohamad, place, actor };
 }
@@ -107,8 +107,7 @@ test('an order is linked to the employee: claim, who works on it, full activity 
   await orders.updateOrderStatus(db, id, 'preparing', 'no sugar', ahmad);
   await orders.assignOrder(db, id, mohamad.id, manager);                                                     // the manager hands it over
   o = (await orders.getOrder(db, id)).order; assert.equal(o.assigned_name, 'Mohamad Saad');
-  assert.equal(await code(orders.updateOrderStatus(db, id, 'ready', '', ahmad)), 'not_your_order');          // Ahmad lost access
-  await orders.updateOrderStatus(db, id, 'ready', '', mohamad);
+  assert.equal(await code(orders.updateOrderStatus(db, id, 'out_for_delivery', '', ahmad)), 'not_your_order');   // Ahmad lost access
   await orders.updateOrderStatus(db, id, 'out_for_delivery', '', mohamad);
   await orders.updateOrderStatus(db, id, 'completed', '', mohamad);
   assert.equal(await code(orders.claimOrder(db, id, ahmad)), 'order_closed');
@@ -119,12 +118,11 @@ test('an order is linked to the employee: claim, who works on it, full activity 
     ['claimed', 'confirmed', 'Ahmad Khalil', ''],
     ['status', 'preparing', 'Ahmad Khalil', ''],
     ['assigned', 'preparing', 'Mona Manager', 'Mohamad Saad'],
-    ['status', 'ready', 'Mohamad Saad', ''],
     ['status', 'out_for_delivery', 'Mohamad Saad', ''],
     ['status', 'completed', 'Mohamad Saad', ''],
   ]);
   assert.ok(history.every((h) => h.created_at)); assert.equal(history[2].note, 'no sugar');
-  assert.deepEqual(history.slice(1).map((h) => h.changed_by), [ahmad.id, ahmad.id, manager.id, mohamad.id, mohamad.id, mohamad.id]);
+  assert.deepEqual(history.slice(1).map((h) => h.changed_by), [ahmad.id, ahmad.id, manager.id, mohamad.id, mohamad.id]);
 });
 
 test('release: the assignee or a manager can return an order; staff cannot release someone else\'s', async () => {
@@ -191,7 +189,7 @@ test('HTTP permissions: staff cannot reach menu, settings, users or the staff da
   const mine = (await s('GET', '/orders?assigned=me')).body; assert.equal(mine.total, 1); assert.equal(mine.orders[0].assigned_name, 'Ahmad Khalil');
   assert.equal((await s('GET', '/orders?assigned=none')).body.total, 0);
   const other = await client(db, 'mohamad');
-  const r = await other('PUT', `/orders/${id}/status`, { status: 'ready' }); assert.equal(r.statusCode, 403); assert.equal(r.body.error, 'not_your_order'); assert.equal(r.body.assigned_name, 'Ahmad Khalil');
+  const r = await other('PUT', `/orders/${id}/status`, { status: 'out_for_delivery' }); assert.equal(r.statusCode, 403); assert.equal(r.body.error, 'not_your_order'); assert.equal(r.body.assigned_name, 'Ahmad Khalil');
   assert.equal((await other('POST', `/orders/${id}/claim`)).statusCode, 409);
 });
 
@@ -220,4 +218,17 @@ test('HTTP: Super Admin can do everything; a disabled employee is locked out imm
   assert.equal((await o('PUT', '/users/3', { full_name: 'Ahmad Khalil', username: 'ahmad', is_active: false })).statusCode, 200);
   assert.equal((await s('GET', '/orders')).statusCode, 401);
   assert.equal((await o('DELETE', `/users/${boss.id}`)).statusCode, 409);
+});
+
+test('each order type has its own stages: pickup has Ready, delivery has Out for Delivery', async () => {
+  const { db, boss, place } = await team();
+  const delivery = await place();
+  const mango = (await db.query("SELECT p.id, s.id AS sid FROM products p JOIN product_sizes s ON s.product_id=p.id WHERE p.name_en='Mango' AND s.name_en='Large'")).rows[0];
+  const pickup = (await orders.createOrder(db, await loadAll(db), { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'pickup', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] }, new Date(), { tracking: true, baseUrl: 'https://moon.test' })).internal_id;
+  const bad = async (id, status) => { try { await orders.updateOrderStatus(db, id, status, '', boss); return 'accepted'; } catch (e) { return e.extra.errors && e.extra.errors.status; } };
+  assert.equal(await bad(pickup, 'out_for_delivery'), 'not_allowed_for_order_type');
+  assert.equal(await bad(delivery, 'ready'), 'not_allowed_for_order_type');
+  assert.equal(await bad(pickup, 'ready'), 'accepted'); assert.equal(await bad(delivery, 'out_for_delivery'), 'accepted');
+  assert.deepEqual(orders.STATUS_FLOWS.pickup, ['whatsapp_prepared', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled']);
+  assert.deepEqual(orders.STATUS_FLOWS.delivery, ['whatsapp_prepared', 'confirmed', 'preparing', 'out_for_delivery', 'completed', 'cancelled']);
 });

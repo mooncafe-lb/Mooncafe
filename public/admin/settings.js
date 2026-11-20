@@ -1,4 +1,4 @@
-import { h, clear, t, call, toast, errorText, fields, imagePicker, state } from './core.js';
+import { h, clear, t, call, toast, errorText, fields, imagePicker, imageProblem, state } from './core.js';
 import { DICT } from '../js/i18n.js';
 
 const DAYS = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri'];
@@ -94,9 +94,9 @@ export function renderBrand() {
     h('section', { class: 'box' }, h('h3', null, t('colors')), h('div', { class: 'grid2' }, colorDefs.map((k) => f[k].el)),
       h('h3', null, t('fonts')), h('div', { class: 'grid2' }, font.ar.el, font.en.el),
       h('h3', null, t('logo')), h('p', { class: 'hint' }, t('logo_help')), logo.el, hero.el, msg,
-      h('button', { class: 'btn', type: 'button', onClick: () => saveSetting('branding', {
+      h('button', { class: 'btn', type: 'button', onClick: () => { const problem = imageProblem(logo, hero); if (problem) { msg.textContent = problem; return; } return saveSetting('branding', {
         ...Object.fromEntries(colorDefs.map((k) => [k, f[k].get()])), font_ar: font.ar.get(), font_en: font.en.get(), logo_image_id: logo.get(), hero_image_id: hero.get(),
-      }, msg) }, t('save'))));
+      }, msg); } }, t('save'))));
 }
 
 // --------------------------------------------------------------------- content
@@ -129,6 +129,7 @@ export function renderContent() {
       { k: 'footer_ar', label: t('footer_ar'), max: 300 }, { k: 'footer_en', label: t('footer_en'), max: 300, dir: 'ltr' },
       { k: 'currency_ar', label: t('currency_ar'), max: 12 }, { k: 'currency_en', label: t('currency_en'), max: 12, dir: 'ltr' },
     ]),
+    formBox(t('feedback_box'), 'feedback', [{ k: 'review_url', label: t('review_url'), max: 500, dir: 'ltr', hint: t('review_help') }]),
     h('section', { class: 'box' }, h('h3', null, t('promotions')), promoBox, promoMsg,
       h('div', { class: 'row' }, h('button', { class: 'btn small ghost', type: 'button', onClick: () => { promos.push(promoRow({ active: true })); drawPromos(); } }, `+ ${t('add')}`),
         h('button', { class: 'btn', type: 'button', onClick: () => saveSetting('promotions', { items: promos.map((p) => ({ id: p.id, title_ar: p.f.title_ar.get(), title_en: p.f.title_en.get(), text_ar: p.f.text_ar.get(), text_en: p.f.text_en.get(), active: p.f.active.get() })) }, promoMsg) }, t('save')))));

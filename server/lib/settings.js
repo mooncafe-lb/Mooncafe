@@ -37,6 +37,7 @@ const DEFAULTS = {
     overrides: {},
   },
   promotions: { items: [] },
+  feedback: { review_url: '' },
 };
 
 const T = (max = 300, opts = {}) => S.str({ max, def: '', ...opts });
@@ -86,6 +87,7 @@ const SHAPES = {
     footer_ar: T(300), footer_en: T(300), currency_ar: T(12), currency_en: T(12),
     overrides: S.map(/^[a-z0-9_.]{1,60}$/, S.obj({ ar: T(300), en: T(300) })),
   }),
+  feedback: S.obj({ review_url: S.str({ max: 500, def: '', pattern: /^https:\/\/\S+$/ }) }),
   promotions: S.obj({
     items: S.arr(S.obj({
       id: T(40), title_ar: T(100), title_en: T(100), text_ar: T(300), text_en: T(300), active: S.bool({ def: true }),

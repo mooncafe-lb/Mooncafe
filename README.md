@@ -25,8 +25,10 @@ Stack: Node 20+, Express, PostgreSQL (Render). No build step. Start: `npm start`
 * `apply`: applies pending migrations permanently. Use only after a clean dry-run, then set it back to `hold`.
 
 Migrations: `001` base schema, `002` menu structure, `003` menu seed (34 products, Coffee unpriced),
-`004` admin sessions, `005` staff accounts, order assignment and activity log. Never edit an applied migration:
-add a new numbered file. All of 002-005 are additive (no DROP TABLE/COLUMN, no DELETE).
+`004` admin sessions, `005` staff accounts, order assignment and activity log, `006` daily order numbers,
+private tracking links and customer rating. Never edit an applied migration: add a new numbered file.
+All of 002-006 are additive (no DROP TABLE/COLUMN, no DELETE). Until 006 is applied the shop keeps working exactly as before
+(old order reference, no tracking link); the tracking features switch on by themselves once 006 is applied.
 
 ## First run
 
@@ -50,6 +52,26 @@ add a new numbered file. All of 002-005 are additive (no DROP TABLE/COLUMN, no D
   last activity and past orders.
 * Permissions are checked on the server on every request (`server/lib/permissions.js`); the browser only hides buttons.
   The last active Super Admin cannot be disabled, demoted or deleted; nobody can disable or delete their own account.
+
+## Order numbers and tracking
+
+* Every order gets a **daily number** (1, 2, 3 ...) that restarts at 1 each day of the **Asia/Beirut** calendar, shown with the
+  date and exact time (`Order #3, 04/11/2026, 01:45 PM`) on the confirmation, the tracking page, the WhatsApp message and in Admin.
+* The number comes from a per-day counter row (`order_counters`) incremented by one atomic statement in the same transaction that
+  saves the order, never from counting rows. The unique key of an order is its internal id; (order_date, daily_number) is also unique.
+* The exact instant is stored in UTC (`created_at`); `order_date` is its Beirut calendar date.
+* Each order has a secret 256-bit tracking token. The page `/track/<token>` and `GET /api/track/<token>` accept nothing else, never show
+  the customer's name, phone, address or notes, and are rate limited.
+* Stages: pickup = New, Accepted, Preparing, Ready for Pickup, Delivered; delivery = New, Accepted, Preparing, Out for Delivery, Delivered
+  (plus Cancelled). The page refreshes itself every 10 seconds.
+* After Delivered the page shows a thank-you, a 1-5 star rating and (if set in Admin > Content) a Google Maps review link.
+
+## Product images
+
+Images are stored in PostgreSQL (table `images`), not on the server disk, so they survive restarts and deployments. Photos are shrunk in the
+browser, converted to WebP (plus a thumbnail) on the server, and the dashboard only says "Saved" after the product has been read back with
+its image and the customer menu serves it. If `sharp` cannot load on the server the original file is stored unchanged.
+Optional variable `PUBLIC_BASE_URL` (for example `https://your-domain`) fixes the address used in tracking links; by default it is the address the customer used.
 
 ## Rules enforced on the server
 

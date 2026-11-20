@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server/index.js",
     "migrate": "node server/migrate.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

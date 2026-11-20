@@ -38,6 +38,11 @@ export function errorText(err) {
   if (b.error === 'invalid_setup_token') return t('err_setup_token');
   if (b.error === 'already_setup') return t('err_already');
   if (b.error === 'wrong_password') return t('err_wrong_password');
+  if (err.status === 413 || b.error === 'payload_too_large') return t('err_img_big');
+  if (b.error === 'invalid_image' || b.error === 'empty_upload') return t('err_img_invalid');
+  if (b.error === 'unsupported_image_type') return t('err_img_type');
+  if (b.error === 'image_save_failed') return t('err_img_upload');
+  if (b.error === 'image_unreachable') return t('err_img_unreachable');
   if (b.error === 'username_taken' || b.error === 'email_taken') return t('err_taken');
   if (b.error === 'forbidden' || err.status === 403) return t('err_forbidden');
   if (b.error === 'last_super_admin') return t('err_last_super');
@@ -46,6 +51,7 @@ export function errorText(err) {
   if (b.error === 'claim_first') return t('err_claim_first');
   if (b.error === 'already_assigned') return `${t('err_assigned')}${b.assigned_name ? `: ${b.assigned_name}` : ''}`;
   if (b.error === 'order_closed') return t('err_closed_order');
+  if (b.error === 'validation' && b.errors && b.errors.status === 'not_allowed_for_order_type') return t('err_bad_status');
   if (b.error === 'validation') return t('err_validation');
   return t('err_generic');
 }
@@ -109,20 +115,56 @@ export async function uploadImage(file, kind = 'photo') {
   return data;
 }
 
-// Image picker: shows the current image, uploads on choose, supports removal.
+export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+// Phone photos are large: shrink them in the browser first (1600px) so uploads are small and fast.
+// If the browser cannot do it, the original file is uploaded as it is.
+export async function shrinkImage(file, kind) {
+  if (kind === 'logo' || !/^image\/(jpeg|png|webp)$/.test(file.type || '') || file.size <= 1.2 * 1024 * 1024) return file;
+  try {
+    if (typeof createImageBitmap !== 'function') return file;
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const type = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/webp';
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.86));
+    return blob && blob.type === type && blob.size < file.size ? blob : file;
+  } catch (_) { return file; }
+}
+
+// Image picker. A save is only allowed when the upload really finished and the image can be loaded back from the site:
+//   get()     the image id to save, problem()  an error text while uploading or after a failed upload (empty when fine)
 export function imagePicker(label, currentId, { kind = 'photo', fallbackUrl = null, removeLabel } = {}) {
   let id = currentId || null;
+  let busy = false;
+  let failure = '';
   const preview = h('img', { class: 'thumb', alt: '', src: id ? `/api/images/${id}?v=thumb` : (fallbackUrl || '') });
-  const status = h('small', { class: 'hint' });
+  const status = h('small', { class: 'hint img-status', role: 'status' });
+  const show = (text, bad) => { status.textContent = text; status.className = `hint img-status${bad ? ' err' : ''}`; };
   const input = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif', onChange: async () => {
     const file = input.files && input.files[0];
     if (!file) return;
-    if (file.size > 6 * 1024 * 1024) { status.textContent = t('err_generic'); return; }
-    status.textContent = t('loading');
-    try { const r = await uploadImage(file, kind); id = r.id; preview.setAttribute('src', `/api/images/${id}?v=thumb`); status.textContent = ''; } catch (e) { status.textContent = errorText(e); }
+    failure = '';
+    if (file.size > MAX_UPLOAD_BYTES * 4) { failure = t('err_img_big'); show(failure, true); return; }
+    busy = true; show(t('uploading'));
+    try {
+      const upload = await shrinkImage(file, kind);
+      if (upload.size > MAX_UPLOAD_BYTES) throw new CallError(413, { error: 'payload_too_large' });
+      const r = await uploadImage(upload, kind);
+      const check = await fetch(r.thumb_url || r.url, { credentials: 'same-origin' });          // can the browser really load it?
+      if (!check.ok) throw new CallError(check.status || 0, { error: 'image_unreachable' });
+      id = r.id; preview.setAttribute('src', `/api/images/${id}?v=thumb`); show(t('uploaded'));
+    } catch (e) { failure = errorText(e); show(failure, true); } finally { busy = false; }
   } });
-  const remove = h('button', { class: 'link', type: 'button', onClick: () => { id = null; preview.setAttribute('src', fallbackUrl || ''); } }, removeLabel || t('remove_image'));
-  return { el: h('div', { class: 'field' }, label ? h('label', null, label) : null, h('div', { class: 'row' }, preview, h('div', null, input, remove)), status), get: () => id };
+  const remove = h('button', { class: 'link', type: 'button', onClick: () => { id = null; failure = ''; show(''); preview.setAttribute('src', fallbackUrl || ''); } }, removeLabel || t('remove_image'));
+  return {
+    el: h('div', { class: 'field' }, label ? h('label', null, label) : null, h('div', { class: 'row' }, preview, h('div', null, input, remove)), status),
+    get: () => id,
+    problem: () => (busy ? t('err_img_pending') : failure),
+  };
 }
+export const imageProblem = (...pickers) => pickers.map((p) => p.problem()).find(Boolean) || '';
 
 export { h, clear };

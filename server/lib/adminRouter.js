@@ -20,7 +20,7 @@ function createAdminRouter({ db, config, now = () => new Date() }) {
   const express = require('express');
   const router = express.Router();
   const schema = createSchemaChecker(db);
-  const guard = auth.requireAdmin(db, config);
+  const guard = auth.requireAdmin(db, config, now);
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, key: 'admin-login' });
   const setupLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, key: 'admin-setup' });
 
@@ -64,7 +64,7 @@ function createAdminRouter({ db, config, now = () => new Date() }) {
   // ---- everything below needs a valid admin session
   router.use(needReady, guard);
 
-  router.get('/bootstrap', wrap(async (req, res) => { res.json(await svc.bootstrap(db, req.admin)); }));
+  router.get('/bootstrap', wrap(async (req, res) => { const { tracking } = await schema(); res.json(await svc.bootstrap(db, req.admin, { tracking })); }));
 
   router.post('/categories/reorder', need('menu.manage'), wrap(async (req, res) => { await svc.reorder(db, 'categories', req.body); res.json({ ok: true }); }));
   router.post('/categories', need('menu.manage'), wrap(async (req, res) => res.status(201).json(await svc.createCategory(db, req.body))));
@@ -90,7 +90,8 @@ function createAdminRouter({ db, config, now = () => new Date() }) {
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const a = req.query.assigned;
     const assigned = a === 'me' ? req.admin.id : a === 'none' ? 'none' : (Number.isInteger(Number(a)) && Number(a) > 0 ? Number(a) : undefined);
-    res.json(await orders.listOrders(db, { status, assigned, limit, offset }));
+    const { tracking } = await schema();
+    res.json(await orders.listOrders(db, { status, assigned, q: String(req.query.q || '').slice(0, 80), date: req.query.date, limit, offset, tracking }));
   }));
   router.get('/orders/:id', need('orders.view'), wrap(async (req, res) => res.json(await orders.getOrder(db, toId(req.params.id)))));
   router.post('/orders/:id/claim', need('orders.claim'), wrap(async (req, res) => res.json({ ok: true, ...(await orders.claimOrder(db, toId(req.params.id), req.admin)) })));
@@ -112,14 +113,19 @@ function createAdminRouter({ db, config, now = () => new Date() }) {
   router.post('/users', wrap(async (req, res) => res.status(201).json(await users.createUser(db, req.admin, req.body))));
   router.put('/users/:id', wrap(async (req, res) => { await users.updateUser(db, req.admin, toId(req.params.id), req.body); res.json({ ok: true }); }));
   router.delete('/users/:id', wrap(async (req, res) => { await users.deleteUser(db, req.admin, toId(req.params.id)); res.json({ ok: true }); }));
-  router.get('/staff', need('staff.view'), wrap(async (req, res) => res.json(await staff.staffDashboard(db))));
-  router.get('/staff/:id/history', need('staff.view'), wrap(async (req, res) => res.json(await staff.staffHistory(db, toId(req.params.id)))));
+  router.get('/staff', need('staff.view'), wrap(async (req, res) => res.json(await staff.staffDashboard(db, { tracking: (await schema()).tracking }))));
+  router.get('/staff/:id/history', need('staff.view'), wrap(async (req, res) => res.json(await staff.staffHistory(db, toId(req.params.id), { tracking: (await schema()).tracking }))));
 
   // image upload: the browser sends the raw file as the request body
-  router.post('/images', need('menu.manage'), express.raw({ type: ['image/*', 'application/octet-stream'], limit: '6mb' }), wrap(async (req, res) => {
+  router.post('/images', need('menu.manage'), express.raw({ type: ['image/*', 'application/octet-stream'], limit: '16mb' }), wrap(async (req, res) => {
     const kind = req.query.kind === 'logo' ? 'logo' : 'photo';
-    const saved = await saveImage(db, req.body, { kind, name: req.query.name || '' });
-    res.status(201).json({ ...saved, url: `/api/images/${saved.id}` });
+    try {
+      const saved = await saveImage(db, req.body, { kind, name: req.query.name || '' });
+      res.status(201).json({ ...saved, url: `/api/images/${saved.id}`, thumb_url: `/api/images/${saved.id}?v=thumb` });
+    } catch (err) {
+      console.error(`[images] upload rejected: ${err.code || err.message} (type ${req.get('content-type') || '?'}, ${Buffer.isBuffer(req.body) ? req.body.length : 0} bytes)`);
+      throw err;
+    }
   }));
 
   router.post('/change-password', wrap(async (req, res) => {

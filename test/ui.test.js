@@ -138,12 +138,15 @@ test('checkout validates, creates the order on the server, clears the tray and o
   assert.equal(post.url, '/api/orders'); assert.equal(post.status, 201);
   assert.deepEqual([post.body.fulfillment, post.body.lang, post.body.items[0].quantity, post.body.customer_name], ['pickup', 'ar', 2, 'سارة حداد']);
   assert.ok(!('price' in post.body.items[0]) && !('unit_price' in post.body.items[0]));
-  const done = sheetEl(dom); assert.ok(done.textContent.includes('طلبك جاهز للإرسال')); assert.match(byClass(done, 'code')[0].textContent, /^MC-/);
+  const done = sheetEl(dom); assert.ok(done.textContent.includes('طلبك جاهز للإرسال'));
+  assert.equal(byClass(done, 'order-number')[0].textContent, '#1');                                        // numeric daily number, no prefix
+  assert.match(byClass(done, 'order-date')[0].textContent, /\d{2}\/\d{2}\/\d{4}/); assert.match(byClass(done, 'order-time')[0].textContent, /\d{2}:\d{2} [صم]/);
+  const link = byClass(done, 'track-link')[0].getAttribute('href'); assert.match(link, /^https:\/\/moon\.test\/track\/[A-Za-z0-9_-]{43}$/);
   assert.equal(app.cart.items().length, 0); assert.equal(cups(app).length, 0);
   const nav = dom.location.navigations[0];
   assert.ok(nav.startsWith('https://wa.me/96178964984?text='));
   const msg = decodeURIComponent(nav.split('text=')[1]);
-  for (const part of ['Mango', 'x2', '300,000 x 2 = 600,000', '600,000', 'سارة حداد', '+96171123456', 'مع كاسة ماء']) assert.ok(msg.includes(part), part + '\n' + msg);
+  for (const part of ['Mango', 'x2', '300,000 x 2 = 600,000', '600,000', 'سارة حداد', '+96171123456', 'مع كاسة ماء', 'رقم الطلب: 1', 'التاريخ: ', 'الوقت: ', `رابط تتبع الطلب: ${link}`]) assert.ok(msg.includes(part), part + '\n' + msg);
   const order = (await db.query('SELECT * FROM orders')).rows[0];
   assert.equal(order.total_lbp, 600000); assert.equal(order.status, 'whatsapp_prepared');
   assert.equal(JSON.parse(dom.localStorage.getItem('mc_customer')).name, 'سارة حداد');
@@ -250,13 +253,13 @@ test('quick add from the card: pick a size chip, press Add to Tray, no sheet nee
   byClass(cardOf(root, 'Smoothie' === 'x' ? 'x' : 'Peach'), 'add')[0].click(); await flush();
   assert.equal(cups(app).length, 2);
   const bar = byClass(root, 'bar')[0]; assert.ok(!bar.classList.contains('idle'));
-  assert.ok(bar.textContent.includes('2 مشروب') && bar.textContent.includes('500,000 ل.ل.'));
+  assert.equal(byClass(bar, 'bar-count')[0].textContent, '2');                             // the basket shows the number only
+  assert.ok(!bar.textContent.includes('مشروب') && bar.textContent.includes('500,000 ل.ل.'));
   assert.equal(byClass(root, 'badge-count')[0].textContent, '2');                          // header tray button badge
   const summary = byClass(root, 'summary')[0];
   assert.ok(summary.textContent.includes('طلبك') && summary.textContent.includes('Mango') && summary.textContent.includes('Peach') && summary.textContent.includes('500,000'));
   button(summary, '×').click();                                                           // remove from the summary card
   assert.equal(app.cart.items().length, 1);
-  button(bar, '2 مشروب') || null;
   byClass(root, 'bar-cart')[0].click(); assert.ok(sheetEl(dom).textContent.includes('صينيتك'));
 });
 
@@ -287,4 +290,69 @@ test('category chips carry icons and mark the active section; the header and men
   assert.ok(byClass(root, 'tab')[3].classList.contains('active') && !byClass(root, 'tab')[0].classList.contains('active'));
   const [, menuBtn] = byClass(root, 'icon-btn'); menuBtn.click();
   assert.ok(sheetEl(dom).textContent.includes('تواصل معنا'));
+});
+
+test('the basket button in the bottom bar shows only a number and follows every add and remove', async () => {
+  const { dom, root, app } = await boot();
+  const count = () => { const c = byClass(root, 'bar-count')[0]; return c ? c.textContent : null; };
+  assert.equal(count(), null);                                                            // empty tray: no basket button at all
+  const add = async (name) => { byClass(cardOf(root, name), 'add')[0].click(); await flush(); };
+  await add('Mango'); assert.equal(count(), '1');
+  await add('Peach'); assert.equal(count(), '2');
+  await add('Oreo'); assert.equal(count(), '3');
+  await add('Oreo'); assert.equal(count(), '4');                                          // quantity counts as products too
+  const basket = byClass(root, 'bar-cart')[0];
+  assert.ok(!/[A-Za-z\u0600-\u06FF]/.test(basket.textContent), `only a number expected, got "${basket.textContent}"`);
+  assert.equal(basket.getAttribute('aria-label').endsWith('(4)'), true);
+  app.cart.setQty(app.cart.items()[2].key, 1); assert.equal(count(), '3');                 // decrease
+  app.cart.remove(app.cart.items()[0].key); assert.equal(count(), '2');                    // remove
+  app.cart.clear(); assert.equal(count(), null);
+  assert.ok(byClass(root, 'bar')[0].classList.contains('idle'));
+  assert.equal(byClass(root, 'badge-count')[0].textContent, '0');
+  assert.equal(sheetEl(dom), undefined);
+});
+
+// ------------------------------------------------------------------------------------------- phone layout
+const fs = require('fs');
+const CSS = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'site.css'), 'utf8');
+const mediaBlock = (query) => { const start = CSS.indexOf(`@media (${query})`); let depth = 0; for (let i = CSS.indexOf('{', start); i < CSS.length; i++) { if (CSS[i] === '{') depth++; if (CSS[i] === '}' && --depth === 0) return CSS.slice(start, i + 1); } return ''; };
+
+test('phone bottom bar: Checkout sits ABOVE WhatsApp, both inside the screen; the basket shows only a number', async () => {
+  const { root, app } = await boot();
+  byClass(cardOf(root, 'Mango'), 'add')[0].click(); await flush();
+  const bar = byClass(root, 'bar')[0];
+  assert.deepEqual(bar.children.map((c) => c.className.split(' ')[0]), ['bar-cart', 'bar-total', 'btn', 'wa']);        // order in the page: cart, total, Checkout, WhatsApp
+  const checkout = bar.children[2]; const wa = bar.children[3];
+  assert.equal(checkout.textContent, 'إتمام الطلب'); assert.equal(checkout.disabled, false);
+  assert.equal(wa.getAttribute('href'), 'https://wa.me/96178964984'); assert.ok(wa.textContent.includes('WhatsApp'));
+  assert.equal(byClass(bar, 'bar-cart')[0].textContent, '1');                              // the number only, nothing else
+  const phone = mediaBlock('max-width: 719px');
+  assert.match(phone, /grid-template-areas:\s*'cart checkout' 'total wa'/);                // row 1: basket + Checkout, row 2: total + WhatsApp
+  assert.match(phone, /\.bar:not\(\.idle\) > \.btn \{[^}]*grid-area: checkout/); assert.match(phone, /\.bar:not\(\.idle\) > \.wa \{[^}]*grid-area: wa/);
+  assert.match(phone, /grid-template-columns:\s*minmax\(88px, 34%\) minmax\(0, 1fr\)/);   // percentages: no dependence on the text length
+  assert.ok(app.cart.count() === 1);
+});
+
+test('phone header: the open/closed pill leaves the header (it appears in the hero), the language button keeps its own space', async () => {
+  const { root } = await boot();
+  const header = byClass(root, 'top')[0];
+  assert.equal(byClass(header, 'in-header').length, 1); assert.equal(byClass(root, 'in-stage').length, 1); assert.equal(byClass(root, 'in-stage')[0].textContent, 'مفتوح الآن');
+  assert.equal(byClass(header, 'icon-btn').length, 2);                                      // basket and info stay
+  const lang = byClass(header, 'lang')[0];
+  assert.deepEqual([lang.textContent, lang.getAttribute('dir'), lang.getAttribute('lang')], ['English', 'ltr', 'en']);
+  button(root, 'English').click();
+  const lang2 = byClass(byClass(root, 'top')[0], 'lang')[0];
+  assert.deepEqual([lang2.textContent, lang2.getAttribute('dir'), lang2.getAttribute('lang')], ['العربية', 'rtl', 'ar']);   // Arabic text, right-to-left
+  const small = mediaBlock('max-width: 560px');
+  assert.match(small, /\.status\.in-header \{ display: none; \}/); assert.match(small, /\.status\.in-stage \{ display: inline-flex/);
+  assert.match(CSS, /\.status\.in-stage \{ display: none; \}/);                            // on wider screens the pill stays in the header only
+  assert.match(CSS, /\.lang\[dir='rtl'\] \{ direction: rtl; unicode-bidi: isolate/);
+});
+
+test('phone rules are inside phone media queries and never touch the tray, the cup animation or the product cards', () => {
+  for (const query of ['max-width: 560px', 'max-width: 719px']) {
+    const block = mediaBlock(query);
+    assert.ok(block.length > 100, query);
+    for (const forbidden of ['.tray', '.cup', '.fly', '.card', '.panel', '.stage', '.grid', '.promo']) assert.ok(!block.includes(forbidden), `${query} touches ${forbidden}`);
+  }
 });

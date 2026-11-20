@@ -128,12 +128,12 @@ function checkCsrf(req) {
   try { return new URL(origin).host === req.get('host'); } catch (_) { return false; }
 }
 
-function requireAdmin(db, config) {
+function requireAdmin(db, config, now = () => new Date()) {
   return async (req, res, next) => {
     try {
       if (!checkCsrf(req)) return res.status(403).json({ error: 'csrf' });
       const token = req.cookies && req.cookies[COOKIE];
-      const admin = await sessionAdmin(db, config, token);
+      const admin = await sessionAdmin(db, config, token, now());
       if (!admin) return res.status(401).json({ error: 'unauthorized' });
       req.admin = admin;
       req.sessionToken = token;

@@ -25,11 +25,15 @@ async function boot({ db: given, migrations } = {}) {
   const now = () => new Date('2026-11-02T05:00:00Z');   // fixed clock: Monday 07:00 in Beirut, so results never depend on when the tests run
   const pub = createPublicRouter({ db, config, now }); const adm = createAdminRouter({ db, config, now });
   const jar = {};
+  const calls = [];
+  const slow = { upload: 0 };
   const fetchImpl = async (url, opts = {}) => {
     const isAdmin = url.startsWith('/api/admin');
     const router = isAdmin ? adm : pub;
-    const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
+    const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : (opts.body && opts.body.buf ? opts.body.buf : opts.body);   // a File carries its bytes in .buf here
+    if (isAdmin && url.startsWith('/api/admin/images') && slow.upload) await flush(slow.upload);
     const res = await dispatch(router, { method: opts.method || 'GET', url: url.slice(isAdmin ? 10 : 4), body, headers: opts.headers || {}, cookies: { ...jar } });
+    calls.push({ method: opts.method || 'GET', url, status: res.statusCode });
     if (res.cookiesSet.mc_session) jar.mc_session = res.cookiesSet.mc_session.value;
     if (res.cleared) delete jar.mc_session;
     return { ok: res.statusCode < 400, status: res.statusCode, json: async () => JSON.parse(JSON.stringify(res.body === undefined ? null : res.body)) };
@@ -42,7 +46,7 @@ async function boot({ db: given, migrations } = {}) {
   const app = await import(`../public/admin/admin.js?run=${++run}`);
   await app.ready;
   const api = async (method, url, bodyObj) => (await dispatch(pub, { method, url, body: bodyObj })).body;
-  return { db, dom, root: dom.root, app, api, core };
+  return { db, dom, root: dom.root, app, api, core, calls, slow };
 }
 
 const fieldOf = (el, label) => all(el, (n) => n.classList.contains('field') && n.children[0] && n.children[0].tagName === 'LABEL' && n.children[0].textContent === label)[0];
@@ -195,13 +199,13 @@ test('orders tab: list, details, status change; account tab: password change', a
   const made = await dispatch(pub, { method: 'POST', url: '/orders', body: { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 2 }] } });
   await setupAndLogin(ctx);
   const row = byClass(root, 'order-row')[0];
-  assert.ok(row.textContent.includes(made.body.order.code) && row.textContent.includes('Sara Haddad') && row.textContent.includes('طلب جديد'));
+  assert.ok(row.textContent.includes(`#${made.body.order.number}`) && row.textContent.includes('Sara Haddad') && row.textContent.includes('طلب جديد') && row.textContent.includes(made.body.order.date));
   row.click(); await flush(40);
   const s = sheetEl(dom);
   assert.ok(s.textContent.includes('Mango (كبير) × 2') && s.textContent.includes('Sibline road') && s.textContent.includes('650,000'));
   all(s, (n) => n.tagName === 'BUTTON' && n.dataset.status === 'confirmed')[0].click(); await flush(80);
   assert.equal((await db.query('SELECT status FROM orders')).rows[0].status, 'confirmed');
-  assert.ok(byClass(root, 'order-row')[0].textContent.includes('تم الاستلام'));
+  assert.ok(byClass(root, 'order-row')[0].textContent.includes('تم قبول الطلب'));
   const sel = inputOf(root, 'الحالة'); sel.value = 'cancelled'; sel.dispatchEvent({ type: 'change', bubbles: true, target: sel }); await flush(60);
   assert.equal(byClass(root, 'order-row').length, 0);
 
@@ -228,7 +232,8 @@ const auth = require('../server/lib/auth');
 const bossOf = async (db) => auth.publicAdmin((await db.query('SELECT id, email, username, full_name, role FROM admins WHERE id = 1')).rows[0]);
 const placeOrder = async (db) => {
   const mango = (await db.query("SELECT p.id, s.id AS sid FROM products p JOIN product_sizes s ON s.product_id=p.id WHERE p.name_en='Mango' AND s.name_en='Large'")).rows[0];
-  return (await orders.createOrder(db, await loadAll(db), { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] })).order;
+  const res = await orders.createOrder(db, await loadAll(db), { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] }, new Date(), { tracking: true, baseUrl: 'https://moon.test' });
+  return { ...res.order, id: res.internal_id, code: `#${res.order.number}` };
 };
 async function signIn(root, login, password = PW) {
   btn(root, 'خروج').click(); await until(() => root.textContent.includes('تسجيل الدخول') && !root.textContent.includes('خروج'));
@@ -264,11 +269,11 @@ test('Super Admin adds an employee in the Staff tab; the employee signs in with 
   assert.equal((await db.query('SELECT assigned_name, status FROM orders')).rows[0].status, 'confirmed');
   byClass(root, 'order-row')[0].click(); await until(() => sheetEl(dom));
   all(sheetEl(dom), (n) => n.dataset && n.dataset.status === 'preparing')[0].click();
-  await until(() => byClass(root, 'order-row')[0].textContent.includes('جاري التحضير'));
+  await until(() => byClass(root, 'order-row')[0].textContent.includes('قيد التحضير'));
   byClass(root, 'order-row')[0].click(); await until(() => sheetEl(dom));
   const log = byClass(sheetEl(dom), 'log-row').map((r) => r.textContent);
   assert.equal(log.length, 3);
-  assert.ok(log[0].includes('تم إنشاء الطلب') && log[1].includes('استلم الطلب الموظف: Ahmad Khalil') && log[2].includes('جاري التحضير — بواسطة Ahmad Khalil'), log.join(' | '));
+  assert.ok(log[0].includes('تم إنشاء الطلب') && log[1].includes('استلم الطلب الموظف: Ahmad Khalil') && log[2].includes('قيد التحضير — بواسطة Ahmad Khalil'), log.join(' | '));
   assert.ok(sheetEl(dom).textContent.includes('الموظف المسؤول: Ahmad Khalil'));
   assert.ok(order.code);
 });
@@ -287,11 +292,121 @@ test('Manager sees the staff dashboard and orders; cannot add managers, change s
   tab(root, 'staff').click(); await until(() => byClass(root, 'staff-card').length > 0);
   assert.ok(root.textContent.includes('طلبات بانتظار الاستلام: 1'));
   const card = byClass(root, 'staff-card').find((c) => c.textContent.includes('Ahmad Khalil'));
-  assert.ok(card.textContent.includes('طلبات حالية: 1') && card.textContent.includes('طلبات تابعها: 1') && card.textContent.includes('جاري التحضير'));
+  assert.ok(card.textContent.includes('طلبات حالية: 1') && card.textContent.includes('طلبات تابعها: 1') && card.textContent.includes('قيد التحضير'));
   btn(card, 'التفاصيل').click(); await until(() => sheetEl(dom));
   assert.ok(sheetEl(dom).textContent.includes('الطلبات السابقة') && sheetEl(dom).textContent.includes(o1.code) && sheetEl(dom).textContent.includes('آخر الإجراءات'));
   dom.doc.body.children.filter((c) => c.classList.contains('backdrop')).forEach((b) => b.remove());
   btn(root, '+ مستخدم جديد').click();
   assert.equal(inputOf(sheetEl(dom), 'الدور').children.length, 1);        // a manager can only create staff
   assert.ok(root.textContent.includes('Mona Manager'));
+});
+
+
+// ------------------------------------------------------------------ product image upload from the dashboard
+const sharp = require('sharp');
+const fileOf = (name, type, buf, size) => ({ name, type, size: size === undefined ? buf.length : size, buf });
+const choose = (input, file) => { input.files = [file]; input.dispatchEvent({ type: 'change', bubbles: true, target: input }); };
+const pickerOf = (sheet) => all(sheet, (n) => n.tagName === 'INPUT' && n.getAttribute('type') === 'file')[0];
+const statusOf = (sheet) => byClass(sheet, 'img-status')[0];
+const openEspresso = async (ctx) => {
+  tab(ctx.root, 'menu').click();
+  const row = all(ctx.root, (n) => n.classList.contains('list-row') && n.textContent.includes('Espresso'))[0];
+  btn(row, 'تعديل').click();
+  type(inputOf(sheetEl(ctx.dom), 'السعر (ل.ل.)'), '95000');
+  return sheetEl(ctx.dom);
+};
+const jpegBytes = (w = 1200, h = 900) => sharp({ create: { width: w, height: h, channels: 3, background: { r: 200, g: 120, b: 40 } } }).jpeg().toBuffer();
+const savedToast = (dom) => byClass(dom.doc.body, 'toast').some((x) => x.textContent === 'تم الحفظ');
+
+test('image upload from the dashboard: appears in the admin list, in the customer menu, loads from its URL, survives a refresh', async () => {
+  const ctx = await boot(); const { dom, root, api, calls, db } = ctx; await setupAndLogin(ctx);
+  const sheet = await openEspresso(ctx);
+  choose(pickerOf(sheet), fileOf('espresso.jpg', 'image/jpeg', await jpegBytes()));
+  await until(() => statusOf(sheet).textContent === 'تم رفع الصورة ✓');
+  btn(sheet, 'حفظ').click();
+  await until(() => savedToast(dom) && sheetEl(dom) === undefined);
+  const menu = await api('GET', '/menu');
+  const espresso = menu.categories[0].products.find((p) => p.name_en === 'Espresso');
+  assert.match(espresso.thumb_url, /^\/api\/images\/\d+\?v=thumb$/); assert.equal(espresso.orderable, true);
+  const adminRow = all(root, (n) => n.classList.contains('list-row') && n.textContent.includes('Espresso'))[0];
+  assert.equal(byTag(adminRow, 'img')[0].getAttribute('src'), espresso.thumb_url);               // visible in the admin list at once
+  const imageCall = calls.find((c) => c.url.startsWith(espresso.thumb_url.split('?')[0]) && c.method === 'GET');
+  assert.ok(imageCall && imageCall.status === 200);                                              // the browser could load it
+  const fresh = await boot({ db });                                                              // a "refresh": new page, same database
+  assert.equal((await fresh.api('GET', '/menu')).categories[0].products.find((p) => p.name_en === 'Espresso').thumb_url, espresso.thumb_url);
+  assert.equal((await db.query('SELECT count(*) AS n FROM images')).rows[0].n, 1);
+});
+
+test('a failed upload shows a clear error, blocks saving, and never says Saved', async () => {
+  const ctx = await boot(); const { dom, calls } = ctx; await setupAndLogin(ctx);
+  const sheet = await openEspresso(ctx);
+  choose(pickerOf(sheet), fileOf('notes.jpg', 'image/jpeg', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)])));   // starts like a JPEG, is corrupt
+  await until(() => statusOf(sheet).textContent.includes('ليس صورة صالحة'));
+  assert.ok(statusOf(sheet).className.includes('err'));
+  btn(sheet, 'حفظ').click(); await flush(60);
+  assert.ok(sheet.textContent.includes('ليس صورة صالحة'));
+  assert.ok(!savedToast(dom)); assert.equal(calls.filter((c) => c.method === 'PUT' && c.url.includes('/products/')).length, 0);
+  assert.ok(sheetEl(dom));                                                                          // the editor stays open
+});
+
+test('pressing Save while the image is still uploading is blocked, then works once it finished', async () => {
+  const ctx = await boot(); const { dom, slow } = ctx; await setupAndLogin(ctx);
+  const sheet = await openEspresso(ctx);
+  slow.upload = 120;
+  choose(pickerOf(sheet), fileOf('espresso.jpg', 'image/jpeg', await jpegBytes()));
+  await flush(20);
+  btn(sheet, 'حفظ').click(); await flush(20);
+  assert.ok(sheet.textContent.includes('انتظر حتى ينتهي رفع الصورة')); assert.ok(!savedToast(dom));
+  await until(() => statusOf(sheet).textContent === 'تم رفع الصورة ✓');
+  btn(sheet, 'حفظ').click(); await until(() => savedToast(dom));
+});
+
+test('a file that is far too large is refused immediately with a clear message (no upload, no Saved)', async () => {
+  const ctx = await boot(); const { calls } = ctx; await setupAndLogin(ctx);
+  const sheet = await openEspresso(ctx);
+  choose(pickerOf(sheet), fileOf('huge.jpg', 'image/jpeg', Buffer.from('x'), 70 * 1024 * 1024));
+  await flush(20);
+  assert.ok(statusOf(sheet).textContent.includes('كبير جداً'));
+  assert.equal(calls.filter((c) => c.url.startsWith('/api/admin/images')).length, 0);
+});
+
+
+// ------------------------------------------------------------- orders: number, date, time, search, tracking link
+const byId = (el, id) => all(el, (n) => n.attrs && n.attrs.get('id') === id)[0];
+const orderAt = async (db, { now, fulfillment, name, phone }) => {
+  const mango = (await db.query("SELECT p.id, s.id AS sid FROM products p JOIN product_sizes s ON s.product_id=p.id WHERE p.name_en='Mango' AND s.name_en='Large'")).rows[0];
+  return orders.createOrder(db, await loadAll(db), { customer_name: name, phone, fulfillment, address: fulfillment === 'delivery' ? 'Sibline road' : '', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] }, new Date(now), { tracking: true, baseUrl: 'https://moon.test' });
+};
+
+test('Admin orders on a phone-sized list: number + date + time, search, date filter, tracking link, stages by order type', async () => {
+  const ctx = await boot(); const { root, dom, db } = ctx;
+  await setupAndLogin(ctx);
+  const pick = await orderAt(db, { now: '2026-11-04T11:45:00Z', fulfillment: 'pickup', name: 'Sara Haddad', phone: '71123456' });
+  await orderAt(db, { now: '2026-11-05T07:20:00Z', fulfillment: 'delivery', name: 'Karim Nader', phone: '03987654' });
+  tab(root, 'orders').click(); await until(() => byClass(root, 'order-row').length === 2);
+  const rows = () => byClass(root, 'order-row');
+  assert.ok(rows()[0].textContent.includes('#1') && rows()[0].textContent.includes('05/11/2026') && rows()[0].textContent.includes('09:20 ص') && rows()[0].textContent.includes('Karim Nader'));
+  assert.ok(rows()[1].textContent.includes('#1') && rows()[1].textContent.includes('04/11/2026') && rows()[1].textContent.includes('01:45 م'));   // both are number 1, on different days
+  const search = byId(root, 'order-search'); const day = byId(root, 'order-day');
+  type(search, 'sara'); await until(() => rows().length === 1 && rows()[0].textContent.includes('Sara Haddad'));
+  type(search, '0398'); await until(() => rows().length === 1 && rows()[0].textContent.includes('Karim Nader'));          // phone typed locally
+  type(search, '04/11/2026'); await until(() => rows().length === 1 && rows()[0].textContent.includes('Sara Haddad'));      // by date
+  type(search, ''); await until(() => rows().length === 2);
+  day.value = '2026-11-05'; day.dispatchEvent({ type: 'change', bubbles: true, target: day }); await until(() => rows().length === 1);
+  day.value = ''; day.dispatchEvent({ type: 'change', bubbles: true, target: day }); await until(() => rows().length === 2);
+  const sel = inputOf(root, 'الحالة'); sel.value = 'confirmed'; sel.dispatchEvent({ type: 'change', bubbles: true, target: sel }); await until(() => rows().length === 0);
+  sel.value = ''; sel.dispatchEvent({ type: 'change', bubbles: true, target: sel }); await until(() => rows().length === 2);
+
+  rows()[1].click(); await until(() => sheetEl(dom));                                   // the pickup order
+  const s = sheetEl(dom);
+  assert.ok(s.textContent.includes('#1') && s.textContent.includes('04/11/2026') && s.textContent.includes('01:45 م'));
+  const statuses = () => all(sheetEl(dom), (n) => n.dataset && n.dataset.status).map((n) => n.dataset.status);
+  assert.deepEqual(statuses(), ['whatsapp_prepared', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled']);        // pickup stages
+  const token = (await db.query('SELECT tracking_token FROM orders WHERE id = $1', [pick.internal_id])).rows[0].tracking_token;
+  assert.equal(byId(s, 'open-tracking').getAttribute('href'), `https://moon.test/track/${token}`);
+  all(s, (n) => n.dataset && n.dataset.status === 'ready')[0].click(); await until(() => sheetEl(dom) === undefined);
+  assert.equal((await db.query('SELECT status FROM orders WHERE id = $1', [pick.internal_id])).rows[0].status, 'ready');
+  rows()[0].click(); await until(() => sheetEl(dom));                                   // the delivery order
+  assert.deepEqual(statuses(), ['whatsapp_prepared', 'confirmed', 'preparing', 'out_for_delivery', 'completed', 'cancelled']);
+  assert.ok(sheetEl(dom).textContent.includes('مع المندوب') && !sheetEl(dom).textContent.includes('جاهز للاستلام'));
 });

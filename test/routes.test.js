@@ -146,8 +146,9 @@ test('admin: orders list, detail with items, status update with history', async 
   const { db, pub, adm } = await site(); const s = await login(adm); const req = (method, url, body) => dispatch(adm, { method, url, body, headers: H, ...s });
   const mango = (await db.query("SELECT p.id, s.id AS sid FROM products p JOIN product_sizes s ON s.product_id=p.id WHERE p.name_en='Mango' AND s.name_en='Large'")).rows[0];
   const made = await dispatch(pub, { method: 'POST', url: '/orders', body: { customer_name: 'Sara Haddad', phone: '71123456', fulfillment: 'delivery', address: 'Sibline road', items: [{ product_id: mango.id, size_id: mango.sid, quantity: 1 }] } });
-  const id = made.body.order.id;
-  const list = (await req('GET', '/orders')).body; assert.equal(list.total, 1); assert.equal(list.orders[0].public_code, made.body.order.code);
+  assert.ok(!('id' in made.body.order) && !('internal_id' in made.body));                      // the public answer never carries database ids
+  const id = (await db.query('SELECT id FROM orders')).rows[0].id;
+  const list = (await req('GET', '/orders')).body; assert.equal(list.total, 1); assert.equal(list.orders[0].daily_number, made.body.order.number); assert.equal(made.body.order.number, 1);
   const detail = (await req('GET', `/orders/${id}`)).body; assert.equal(detail.items.length, 1); assert.equal(detail.items[0].size_name_en, 'Large'); assert.equal(detail.history.length, 1);
   assert.equal((await req('PUT', `/orders/${id}/status`, { status: 'teleported' })).statusCode, 400);
   assert.equal((await req('PUT', `/orders/${id}/status`, { status: 'confirmed', note: 'called customer' })).statusCode, 200);

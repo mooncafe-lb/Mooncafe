@@ -46,7 +46,7 @@ class Element {
 
 function walk(node, fn) { fn(node); (node.childNodes || []).forEach((c) => walk(c, fn)); }
 
-function installDom({ reducedMotion = true, fetchImpl, storage = {}, geo } = {}) {
+function installDom({ reducedMotion = true, fetchImpl, storage = {}, geo, path = '/' } = {}) {
   const doc = {};
   doc.createElement = (t) => new Element(t, doc);
   doc.createTextNode = (t) => new TextNode(t);
@@ -62,7 +62,7 @@ function installDom({ reducedMotion = true, fetchImpl, storage = {}, geo } = {})
 
   const mem = new Map(Object.entries(storage));
   const localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k), _mem: mem };
-  const location = { _href: 'https://moon.test/', get href() { return this._href; }, set href(v) { this._href = v; this.navigations.push(v); }, navigations: [] };
+  const location = { pathname: path, origin: 'https://moon.test', _href: 'https://moon.test/', get href() { return this._href; }, set href(v) { this._href = v; this.navigations.push(v); }, navigations: [] };
   const win = { localStorage, location, matchMedia: () => ({ matches: reducedMotion }) };
   Object.assign(globalThis, { document: doc, window: win, fetch: fetchImpl, setInterval: globalThis.setInterval });
   Object.defineProperty(globalThis, 'navigator', { value: { geolocation: geo }, configurable: true, writable: true });

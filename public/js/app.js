@@ -105,10 +105,10 @@ const socialLink = (kind, v) => {
   return { instagram: `https://instagram.com/${handle}`, facebook: `https://facebook.com/${handle}`, tiktok: `https://tiktok.com/@${handle}` }[kind];
 };
 
-function statusPill() {
+function statusPill(where) {
   const s = state.store;
   const open = s.ready && s.status.open;
-  return h('span', { class: `status${open ? ' is-open' : ''}` }, open ? t('open_now') : t('closed_now'));
+  return h('span', { class: `status ${where}${open ? ' is-open' : ''}` }, open ? t('open_now') : t('closed_now'));
 }
 
 function notices() {
@@ -147,7 +147,8 @@ function header() {
   const s = state.store;
   trayCountEl = h('span', { class: 'badge-count' }, String(cart.count()));
   return h('header', { class: 'top' },
-    h('div', { class: 'top-side' }, statusPill(), h('button', { class: 'lang', type: 'button', onClick: switchLang }, t('lang_toggle'))),
+    // the button shows the OTHER language's name, so its text direction follows that language
+    h('div', { class: 'top-side' }, statusPill('in-header'), h('button', { class: 'lang', type: 'button', lang: i18n.lang === 'ar' ? 'en' : 'ar', dir: i18n.lang === 'ar' ? 'ltr' : 'rtl', onClick: switchLang }, t('lang_toggle'))),
     h('div', { class: 'brand' }, h('div', { class: 'logo-plate' }, h('img', { src: s.branding.logo_url, alt: 'Moon Cafe' })),
       h('div', { class: 'brand-text' }, h('div', { class: 'brand-name' }, i18n.name(s, 'name')), h('div', { class: 'brand-sub' }, i18n.name(s, 'tagline')))),
     h('div', { class: 'top-side end' },
@@ -179,7 +180,7 @@ function renderBar() {
   barEl.className = n ? 'bar' : 'bar idle';
   barCartBtn = null;
   if (n) {
-    barCartBtn = h('button', { class: 'bar-cart', type: 'button', onClick: () => sheets.openTray() }, h('img', { src: TRAY_ICON, alt: '' }), h('span', null, t('items_count', { n })));
+    barCartBtn = h('button', { class: 'bar-cart', type: 'button', 'aria-label': `${t('tray_open')} (${n})`, onClick: () => sheets.openTray() }, h('img', { src: TRAY_ICON, alt: '' }), h('span', { class: 'bar-count' }, String(n)));
     clear(barEl, barCartBtn, h('div', { class: 'bar-total' }, h('small', null, t('cart_total')), h('b', null, i18n.money(cart.subtotal()))),
       h('button', { class: 'btn', type: 'button', onClick: () => sheets.openCheckout() }, t('checkout')), wa);
   } else clear(barEl, wa);
@@ -250,7 +251,7 @@ function renderTabs() {
 function stage() {
   const s = state.store;
   const el = h('section', { class: 'stage', style: s.branding.hero_image_url ? { backgroundImage: `linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.72)), url(${s.branding.hero_image_url})` } : null },
-    h('div', { class: 'stage-text' }, h('h1', null, i18n.name(s.content, 'hero_title')), h('p', null, i18n.name(s.content, 'hero_text')),
+    h('div', { class: 'stage-text' }, statusPill('in-stage'), h('h1', null, i18n.name(s.content, 'hero_title')), h('p', null, i18n.name(s.content, 'hero_text')),
       h('button', { class: 'btn', type: 'button', onClick: () => { const m = document.getElementById('menu'); if (m && m.scrollIntoView) m.scrollIntoView({ behavior: 'smooth' }); } }, t('order_now'))),
     h('div', { class: 'stage-grid' }, tray.el, summaryEl));
   if (window.IntersectionObserver) new window.IntersectionObserver((entries) => { state.stageVisible = entries[0].isIntersecting; }, { threshold: 0.2 }).observe(el);

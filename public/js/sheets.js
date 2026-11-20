@@ -197,6 +197,20 @@ export function createSheets(ctx) {
     }
   }
 
+  // "Order #3", then the date and the exact time (Lebanon time), then the private tracking link
+  function orderStamp(o) {
+    const copy = async (btn) => { try { await navigator.clipboard.writeText(o.tracking_url); btn.textContent = t('copied'); } catch (_) { /* no clipboard */ } };
+    return h('div', { class: 'stamp-box' },
+      h('h3', { class: 'order-title' }, `${t('order_word')} `, h('b', { class: 'order-number', dir: 'ltr' }, `#${o.number}`)),
+      h('p', { class: 'stamp order-date' }, `${t('order_date')}: `, h('b', { dir: 'ltr' }, o.date)),
+      h('p', { class: 'stamp order-time' }, `${t('order_time')}: `, h('b', { dir: 'ltr' }, o.time[i18n.lang])),
+      o.tracking_url ? h('div', { class: 'track-box' }, h('small', { class: 'hint' }, t('tracking_link')),
+        h('a', { class: 'track-link', href: o.tracking_url, target: '_blank', rel: 'noopener', dir: 'ltr' }, o.tracking_url),
+        h('div', { class: 'chips', style: { justifyContent: 'center' } },
+          h('a', { class: 'btn small', href: o.tracking_url, target: '_blank', rel: 'noopener' }, t('track_order')),
+          h('button', { class: 'btn small ghost', type: 'button', onClick: (e) => copy(e.currentTarget || e.target) }, t('copy_link')))) : null);
+  }
+
   function openCheckout() {
     const d = state.store.delivery;
     if (form.fulfillment === 'delivery' && !d.delivery_enabled) form.fulfillment = 'pickup';
@@ -206,7 +220,8 @@ export function createSheets(ctx) {
     const sheet = showSheet('checkout', () => {
       if (form.done) {
         return [head(t('sent_title')), h('div', { class: 'done' },
-          h('p', null, t('sent_text')), h('p', { class: 'label' }, t('order_code')), h('div', { class: 'code' }, form.done.order.code),
+          h('p', null, t('sent_text')),
+          form.done.order.number ? orderStamp(form.done.order) : [h('p', { class: 'label' }, t('order_code')), h('div', { class: 'code' }, form.done.order.code)],
           h('p', null, i18n.money(form.done.order.total_lbp)),
           form.done.whatsapp_url ? h('a', { class: 'btn wide', href: form.done.whatsapp_url, target: '_blank', rel: 'noopener' }, t('open_whatsapp')) : null,
           h('p', null, h('button', { class: 'link', type: 'button', onClick: closeSheet }, t('new_order'))))];

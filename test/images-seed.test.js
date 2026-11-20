@@ -30,7 +30,8 @@ test('logo upload stays PNG and keeps transparency', async () => {
 });
 test('non-images, SVG and empty uploads are rejected', async () => {
   const db = await freshDb();
-  await assert.rejects(processImage(Buffer.from('not an image')), (e) => e.code === 'invalid_image');
+  await assert.rejects(processImage(Buffer.from('not an image')), (e) => e.code === 'unsupported_image_type');
+  await assert.rejects(processImage(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)])), (e) => e.code === 'invalid_image');   // looks like a JPEG but is corrupt
   await assert.rejects(processImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')), (e) => ['invalid_image', 'unsupported_image_type'].includes(e.code));
   await assert.rejects(saveImage(db, Buffer.alloc(0)), (e) => e.code === 'empty_upload');
 });

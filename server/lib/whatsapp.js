@@ -30,12 +30,12 @@ const money = (n) => Number(n).toLocaleString('en-US');
 const L = {
   ar: {
     title: 'طلب جديد', code: 'رقم الطلب', name: 'الاسم', phone: 'الهاتف', type: 'نوع الطلب', address: 'العنوان',
-    location: 'الموقع', subtotal: 'المجموع', fee: 'رسوم التوصيل', total: 'الإجمالي', notes: 'ملاحظات',
+    location: 'الموقع', date: 'التاريخ', time: 'الوقت', track: 'رابط تتبع الطلب', subtotal: 'المجموع', fee: 'رسوم التوصيل', total: 'الإجمالي', notes: 'ملاحظات',
     delivery: 'توصيل', pickup: 'استلام', options: 'الخيارات', note: 'ملاحظة', currency: 'ل.ل.', sep: '، ',
   },
   en: {
     title: 'New order', code: 'Order', name: 'Name', phone: 'Phone', type: 'Order type', address: 'Address',
-    location: 'Location', subtotal: 'Subtotal', fee: 'Delivery fee', total: 'Total', notes: 'Notes',
+    location: 'Location', date: 'Date', time: 'Time', track: 'Track your order', subtotal: 'Subtotal', fee: 'Delivery fee', total: 'Total', notes: 'Notes',
     delivery: 'Delivery', pickup: 'Pickup', options: 'Options', note: 'Note', currency: 'LBP', sep: ', ',
   },
 };
@@ -45,6 +45,8 @@ function defaultTemplate(lang, storeName) {
   return [
     `${t.title} - ${storeName}`,
     `${t.code}: {code}`,
+    `${t.date}: {date}`,
+    `${t.time}: {time}`,
     `${t.name}: {name}`,
     `${t.phone}: {phone}`,
     `${t.type}: {type}`,
@@ -57,6 +59,7 @@ function defaultTemplate(lang, storeName) {
     `${t.fee}: {delivery_fee} {currency}`,
     `${t.total}: {total} {currency}`,
     `${t.notes}: {notes}`,
+    `${t.track}: {tracking_link}`,
   ].join('\n');
 }
 
@@ -72,7 +75,7 @@ function renderTemplate(template, vars) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// order: { code, customer_name, phone, fulfillment, address, latitude, longitude, notes, subtotal_lbp, delivery_fee_lbp, total_lbp }
+// order: { number (daily, numeric) | code (legacy), date, time_en, time_ar, tracking_url, customer_name, phone, fulfillment, address, latitude, longitude, notes, subtotal_lbp, delivery_fee_lbp, total_lbp }
 // items: [{ name_ar, name_en, size_name_ar, size_name_en, options:[{name_ar,name_en}], special_instructions, unit_price_lbp, quantity, line_total_lbp }]
 function buildOrderMessage({ order, items, lang = 'ar', template = '', storeName = 'Moon Cafe' }) {
   const t = L[lang] || L.ar;
@@ -89,7 +92,11 @@ function buildOrderMessage({ order, items, lang = 'ar', template = '', storeName
   const isDelivery = order.fulfillment === 'delivery';
   const hasPoint = order.latitude != null && order.longitude != null;
   const vars = {
-    code: order.code,
+    code: order.number ? String(order.number) : order.code,
+    number: order.number ? String(order.number) : '',
+    date: order.date || '',
+    time: (lang === 'en' ? order.time_en : order.time_ar) || '',
+    tracking_link: order.tracking_url || '',
     name: order.customer_name,
     phone: order.phone,
     type: isDelivery ? t.delivery : t.pickup,
@@ -102,7 +109,10 @@ function buildOrderMessage({ order, items, lang = 'ar', template = '', storeName
     notes: order.notes,
     currency: t.currency,
   };
-  return renderTemplate(template && template.trim() ? template : defaultTemplate(lang, storeName), vars);
+  const custom = template && template.trim();
+  const body = renderTemplate(custom ? template : defaultTemplate(lang, storeName), vars);
+  // a customised template must still carry the tracking link
+  return custom && vars.tracking_link && !template.includes('{tracking_link}') ? `${body}\n${t.track}: ${vars.tracking_link}` : body;
 }
 
 module.exports = { normalizePhone, whatsappUrl, buildOrderMessage, renderTemplate, money };
