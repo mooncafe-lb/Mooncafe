@@ -71,6 +71,44 @@ async function setupFirstAdmin(db, config, raw) {
   return { id: rows[0].id, email: input.email.toLowerCase() };
 }
 
+async function resetAdminPassword(db, config, raw) {
+  if (!config.setupToken) throw httpError(403, 'reset_disabled');
+
+  const input = S.parse(S.obj({
+    token: S.str({ min: 1, max: 200, trim: false }),
+    email: S.str({ min: 3, max: 254, pattern: EMAIL }),
+    new_password: newPasswordRule,
+  }), raw);
+
+  if (!safeEqual(input.token, config.setupToken)) {
+    throw httpError(403, 'invalid_reset_token');
+  }
+
+  const hash = await hashPassword(input.new_password);
+  const email = input.email.toLowerCase();
+
+  return db.withTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE admins
+       SET password_hash = $1,
+           failed_attempts = 0,
+           locked_until = NULL
+       WHERE lower(email) = $2
+       RETURNING id`,
+      [hash, email]
+    );
+
+    if (!result.rows[0]) throw httpError(404, 'admin_not_found');
+
+    await client.query(
+      'DELETE FROM admin_sessions WHERE admin_id = $1',
+      [result.rows[0].id]
+    );
+
+    return { ok: true };
+  });
+}
+
 async function login(db, config, raw, ctx = {}, now = new Date()) {
   const input = S.parse(credentialsShape, raw && raw.login === undefined && raw.email !== undefined ? { ...raw, login: raw.email } : raw);
   const who = input.login.toLowerCase();
